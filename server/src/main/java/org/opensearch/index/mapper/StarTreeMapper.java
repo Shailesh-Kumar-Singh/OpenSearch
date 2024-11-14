@@ -34,6 +34,8 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.opensearch.index.compositeindex.datacube.NumericDimension.IS_UNSIGNED_LONG_FIELD;
+
 /**
  * A field mapper for star tree fields
  *
@@ -239,12 +241,14 @@ public class StarTreeMapper extends ParametrizedFieldMapper {
             if (this.objbuilder == null || this.objbuilder.mappersBuilders == null) {
                 String type = (String) XContentMapValues.extractValue(CompositeDataCubeFieldType.TYPE, dimensionMap);
                 dimensionMap.remove(CompositeDataCubeFieldType.TYPE);
+                Boolean isUnsignedLong = (Boolean) XContentMapValues.extractValue(IS_UNSIGNED_LONG_FIELD, dimensionMap);
+                dimensionMap.remove(IS_UNSIGNED_LONG_FIELD);
                 if (type == null) {
                     throw new MapperParsingException(
                         String.format(Locale.ROOT, "unable to parse ordered_dimensions for star tree field [%s]", fieldName)
                     );
                 }
-                return DimensionFactory.parseAndCreateDimension(name, type, dimensionMap, context);
+                return DimensionFactory.parseAndCreateDimension(name, type, isUnsignedLong, dimensionMap, context);
             } else {
                 Optional<Mapper.Builder> dimBuilder = findMapperBuilderByName(name, this.objbuilder.mappersBuilders);
                 if (dimBuilder.isEmpty()) {
