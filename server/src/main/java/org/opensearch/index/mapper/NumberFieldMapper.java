@@ -177,13 +177,12 @@ public class NumberFieldMapper extends ParametrizedFieldMapper {
 
         @Override
         public Optional<DimensionType> getSupportedDataCubeDimensionType() {
-
-            // unsigned long is not supported as dimension for star tree
-            if (type.numericType.equals(NumericType.UNSIGNED_LONG)) {
-                return Optional.empty();
-            }
-
             return Optional.of(DimensionType.NUMERIC);
+        }
+
+        @Override
+        public Boolean isUnsignedLong() {
+            return type.numericType.equals(NumericType.UNSIGNED_LONG);
         }
 
         @Override

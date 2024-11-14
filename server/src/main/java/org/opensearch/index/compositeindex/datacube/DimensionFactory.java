@@ -36,6 +36,7 @@ public class DimensionFactory {
     public static Dimension parseAndCreateDimension(
         String name,
         String type,
+        Boolean isUnsignedLong,
         Map<String, Object> dimensionMap,
         Mapper.TypeParser.ParserContext c
     ) {
@@ -43,7 +44,7 @@ public class DimensionFactory {
             case DateDimension.DATE:
                 return parseAndCreateDateDimension(name, dimensionMap, c);
             case NumericDimension.NUMERIC:
-                return new NumericDimension(name);
+                return new NumericDimension(name, isUnsignedLong);
             case KEYWORD:
                 return new KeywordDimension(name);
             default:
@@ -51,6 +52,15 @@ public class DimensionFactory {
                     String.format(Locale.ROOT, "unsupported field type associated with dimension [%s] as part of star tree field", name)
                 );
         }
+    }
+
+    public static Dimension parseAndCreateDimension(
+        String name,
+        String type,
+        Map<String, Object> dimensionMap,
+        Mapper.TypeParser.ParserContext c
+    ) {
+        return parseAndCreateDimension(name, type, false, dimensionMap, c);
     }
 
     public static Dimension parseAndCreateDimension(
@@ -68,7 +78,7 @@ public class DimensionFactory {
             case DATE:
                 return parseAndCreateDateDimension(name, dimensionMap, c);
             case NUMERIC:
-                return new NumericDimension(name);
+                return new NumericDimension(name, builder.isUnsignedLong());
             case KEYWORD:
                 return new KeywordDimension(name);
             default:
