@@ -24,7 +24,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.opensearch.index.compositeindex.datacube.DateDimension.CALENDAR_INTERVALS;
-import static org.opensearch.index.compositeindex.datacube.KeywordDimension.KEYWORD;
 
 /**
  * Dimension factory class mainly used to parse and create dimension from the mappings
@@ -36,7 +35,6 @@ public class DimensionFactory {
     public static Dimension parseAndCreateDimension(
         String name,
         String type,
-        Boolean isUnsignedLong,
         Map<String, Object> dimensionMap,
         Mapper.TypeParser.ParserContext c
     ) {
@@ -44,23 +42,16 @@ public class DimensionFactory {
             case DateDimension.DATE:
                 return parseAndCreateDateDimension(name, dimensionMap, c);
             case NumericDimension.NUMERIC:
-                return new NumericDimension(name, isUnsignedLong);
-            case KEYWORD:
+                return new NumericDimension(name);
+            case UnsignedLongDimension.UNSIGNED_LONG:
+                return new UnsignedLongDimension(name);
+            case KeywordDimension.KEYWORD:
                 return new KeywordDimension(name);
             default:
                 throw new IllegalArgumentException(
                     String.format(Locale.ROOT, "unsupported field type associated with dimension [%s] as part of star tree field", name)
                 );
         }
-    }
-
-    public static Dimension parseAndCreateDimension(
-        String name,
-        String type,
-        Map<String, Object> dimensionMap,
-        Mapper.TypeParser.ParserContext c
-    ) {
-        return parseAndCreateDimension(name, type, false, dimensionMap, c);
     }
 
     public static Dimension parseAndCreateDimension(
@@ -78,7 +69,9 @@ public class DimensionFactory {
             case DATE:
                 return parseAndCreateDateDimension(name, dimensionMap, c);
             case NUMERIC:
-                return new NumericDimension(name, builder.isUnsignedLong());
+                return new NumericDimension(name);
+            case UNSIGNED_LONG:
+                return new UnsignedLongDimension(name);
             case KEYWORD:
                 return new KeywordDimension(name);
             default:

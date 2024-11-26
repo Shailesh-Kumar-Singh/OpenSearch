@@ -11,6 +11,7 @@ package org.opensearch.index.compositeindex.datacube.startree.utils;
 import org.opensearch.common.Randomness;
 import org.opensearch.index.compositeindex.datacube.Dimension;
 import org.opensearch.index.compositeindex.datacube.NumericDimension;
+import org.opensearch.index.compositeindex.datacube.UnsignedLongDimension;
 import org.opensearch.test.OpenSearchTestCase;
 import org.junit.Before;
 
@@ -48,11 +49,11 @@ public class StarTreeDocumentsSorterTests extends OpenSearchTestCase {
         testData.put(9, new Long[] { 2L, null, -10L, 210L, 325L });
 
         dimensionsOrder = Arrays.asList(
-            new NumericDimension("dim1", false),  // Long
-            new NumericDimension("dim2", true),   // Unsigned Long
-            new NumericDimension("dim3", false),  // Long
-            new NumericDimension("dim4", true),   // Unsigned Long
-            new NumericDimension("dim5", false)   // Long
+            new NumericDimension("dim1"),  // Long
+            new UnsignedLongDimension("dim2"),   // Unsigned Long
+            new NumericDimension("dim3"),  // Long
+            new UnsignedLongDimension("dim4"),   // Unsigned Long
+            new NumericDimension("dim5")   // Long
         );
     }
 
@@ -190,7 +191,9 @@ public class StarTreeDocumentsSorterTests extends OpenSearchTestCase {
         List<Dimension> dimensionsOrder = new ArrayList<>();
         for (int i = 0; i < numDimensions; i++) {
             Boolean isUnsignedLong = random.nextBoolean();
-            dimensionsOrder.add(new NumericDimension("fieldName", isUnsignedLong));
+
+            if (isUnsignedLong) dimensionsOrder.add(new NumericDimension("fieldName"));
+            else dimensionsOrder.add(new UnsignedLongDimension("fieldName"));
         }
 
         // Sort using StarTreeDocumentsSorter
@@ -202,7 +205,9 @@ public class StarTreeDocumentsSorterTests extends OpenSearchTestCase {
             Long[] curr = testData.get(sortedDocIds[i]);
             boolean isCorrectOrder = true;
             for (int j = dimensionId + 1; j < numDimensions; j++) {
-                int comparison = compareLongs(prev[j], curr[j], ((NumericDimension) dimensionsOrder.get(j)).isUnsignedLong());
+                int comparison = -1;
+                if (dimensionsOrder.get(j) instanceof UnsignedLongDimension) comparison = compareLongs(prev[j], curr[j], true);
+                else comparison = compareLongs(prev[j], curr[j], false);
                 if (comparison < 0) {
                     break;
                 } else if (comparison > 0) {

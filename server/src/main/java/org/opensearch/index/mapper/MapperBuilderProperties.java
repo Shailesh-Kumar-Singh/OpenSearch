@@ -30,15 +30,6 @@ public interface MapperBuilderProperties {
     }
 
     /**
-     * Indicates whether the current dimension is unsigned long.
-     *
-     * @return true if the dimension is unsigned long, false otherwise.
-     */
-    default Boolean isUnsignedLong() {
-        return false;
-    }
-
-    /**
      * Indicates whether the implementation supports data cube metrics.
      *
      * @return true if data cube metrics are supported, false otherwise

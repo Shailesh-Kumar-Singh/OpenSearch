@@ -26,19 +26,11 @@ import java.util.function.Consumer;
 @ExperimentalApi
 public class NumericDimension implements Dimension {
     public static final String NUMERIC = "numeric";
-    public static final String IS_UNSIGNED_LONG_FIELD = "isUnsignedLong";
 
-    private final String field;
-    private final Boolean isUnsignedLong;
+    protected final String field;
 
     public NumericDimension(String field) {
         this.field = field;
-        isUnsignedLong = false;
-    }
-
-    public NumericDimension(String field, Boolean isUnsignedLong) {
-        this.field = field;
-        this.isUnsignedLong = isUnsignedLong;
     }
 
     public String getField() {
@@ -70,7 +62,6 @@ public class NumericDimension implements Dimension {
         builder.startObject();
         builder.field(CompositeDataCubeFieldType.NAME, field);
         builder.field(CompositeDataCubeFieldType.TYPE, NUMERIC);
-        builder.field(IS_UNSIGNED_LONG_FIELD, isUnsignedLong);
         builder.endObject();
         return builder;
     }
@@ -88,7 +79,4 @@ public class NumericDimension implements Dimension {
         return Objects.hash(field);
     }
 
-    public Boolean isUnsignedLong() {
-        return isUnsignedLong;
-    }
 }

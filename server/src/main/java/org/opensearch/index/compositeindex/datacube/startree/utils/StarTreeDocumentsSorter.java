@@ -10,8 +10,8 @@ package org.opensearch.index.compositeindex.datacube.startree.utils;
 
 import org.apache.lucene.util.IntroSorter;
 import org.opensearch.index.compositeindex.datacube.Dimension;
-import org.opensearch.index.compositeindex.datacube.NumericDimension;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.IntFunction;
@@ -52,24 +52,9 @@ public class StarTreeDocumentsSorter {
                     Dimension dimension = dimensionsOrder.get(i);
                     Long dimensionValue = currentDimensions[i];
                     if (!Objects.equals(dimensions[i], dimensionValue)) {
-                        if (dimensions[i] == null && dimensionValue == null) {
-                            return 0;
-                        }
-                        if (dimensionValue == null) {
-                            return -1;
-                        }
-                        if (dimensions[i] == null) {
-                            return 1;
-                        }
-                        if (dimension instanceof NumericDimension) {
-                            NumericDimension numericDimension = (NumericDimension) dimension;
-                            if (numericDimension.isUnsignedLong()) {
-                                return Long.compareUnsigned(dimensions[i], dimensionValue);
-                            }
-                        }
-                        return Long.compare(dimensions[i], dimensionValue);
+                        Comparator<Long> comparator = dimension.comparator();
+                        return comparator.compare(dimensions[i], dimensionValue);
                     }
-
                 }
                 return 0;
             }
