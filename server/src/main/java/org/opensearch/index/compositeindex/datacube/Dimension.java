@@ -48,17 +48,17 @@ public interface Dimension extends ToXContent {
     DocValuesType getDocValuesType();
 
     /**
-     * Returns the comparator type used for comparing dimension values. <br>
-     * This determines how numeric values are compared: <br>
-     *   - ComparatorType.UNSIGNED_LONG for unsigned long values <br>
-     *   - ComparatorType.LONG for all other numeric types (DEFAULT)
+     * Returns the dimensionDataType used for comparing and parsing dimension values. <br>
+     * This determines how numeric values are compared and parsed: <br>
+     *   - DimensionDataType.UNSIGNED_LONG for unsigned long values <br>
+     *   - DimensionDataType.LONG for all other numeric types (DEFAULT)
      */
-    default ComparatorType getComparatorType() {
-        return ComparatorType.LONG;
+    default DimensionDataType getDimensionDataType() {
+        return DimensionDataType.LONG;
     }
 
     default Comparator<Long> comparator() {
-        return (a, b) -> getComparatorType().compare(a, b);
+        return (a, b) -> getDimensionDataType().compare(a, b);
     }
 
 }

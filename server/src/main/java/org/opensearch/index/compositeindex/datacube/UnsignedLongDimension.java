@@ -22,14 +22,14 @@ public class UnsignedLongDimension extends NumericDimension {
     }
 
     @Override
-    public ComparatorType getComparatorType() {
-        return ComparatorType.UNSIGNED_LONG;
+    public DimensionDataType getDimensionDataType() {
+        return DimensionDataType.UNSIGNED_LONG;
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
-        builder.field(CompositeDataCubeFieldType.NAME, field);
+        builder.field(CompositeDataCubeFieldType.NAME, getField());
         builder.field(CompositeDataCubeFieldType.TYPE, UNSIGNED_LONG);
         builder.endObject();
         return builder;

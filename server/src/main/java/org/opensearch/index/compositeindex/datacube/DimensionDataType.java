@@ -16,7 +16,7 @@ import org.opensearch.common.annotation.ExperimentalApi;
  * @opensearch.experimental
  */
 @ExperimentalApi
-public enum ComparatorType {
+public enum DimensionDataType {
     LONG {
         @Override
         int compare(Long a, Long b) {

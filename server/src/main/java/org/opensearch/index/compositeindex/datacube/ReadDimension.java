@@ -26,24 +26,24 @@ public class ReadDimension implements Dimension {
     public static final String READ = "read";
     private final String field;
     private final DocValuesType docValuesType;
-    private final ComparatorType comparatorType;
+    private final DimensionDataType dimensionDataType;
 
     public ReadDimension(String field) {
         this.field = field;
         this.docValuesType = DocValuesType.SORTED_NUMERIC;
-        this.comparatorType = ComparatorType.LONG;
+        this.dimensionDataType = DimensionDataType.LONG;
     }
 
     public ReadDimension(String field, DocValuesType docValuesType) {
         this.field = field;
         this.docValuesType = docValuesType;
-        this.comparatorType = ComparatorType.LONG;
+        this.dimensionDataType = DimensionDataType.LONG;
     }
 
-    public ReadDimension(String field, DocValuesType docValuesType, ComparatorType comparatorType) {
+    public ReadDimension(String field, DocValuesType docValuesType, DimensionDataType dimensionDataType) {
         this.field = field;
         this.docValuesType = docValuesType;
-        this.comparatorType = comparatorType;
+        this.dimensionDataType = dimensionDataType;
     }
 
     public String getField() {
@@ -93,8 +93,8 @@ public class ReadDimension implements Dimension {
     }
 
     @Override
-    public ComparatorType getComparatorType() {
-        return comparatorType;
+    public DimensionDataType getDimensionDataType() {
+        return dimensionDataType;
     }
 
 }

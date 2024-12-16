@@ -27,7 +27,7 @@ import java.util.function.Consumer;
 public class NumericDimension implements Dimension {
     public static final String NUMERIC = "numeric";
 
-    protected final String field;
+    private final String field;
 
     public NumericDimension(String field) {
         this.field = field;

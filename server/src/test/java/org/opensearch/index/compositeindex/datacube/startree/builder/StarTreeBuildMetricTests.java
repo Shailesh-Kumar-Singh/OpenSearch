@@ -30,12 +30,14 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.index.codec.composite.LuceneDocValuesConsumerFactory;
 import org.opensearch.index.codec.composite.composite912.Composite912DocValuesFormat;
 import org.opensearch.index.compositeindex.datacube.Dimension;
+import org.opensearch.index.compositeindex.datacube.DimensionDataType;
 import org.opensearch.index.compositeindex.datacube.Metric;
 import org.opensearch.index.compositeindex.datacube.MetricStat;
 import org.opensearch.index.compositeindex.datacube.NumericDimension;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeDocument;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeField;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeFieldConfiguration;
+import org.opensearch.index.compositeindex.datacube.startree.fileformats.meta.DimensionConfig;
 import org.opensearch.index.compositeindex.datacube.startree.fileformats.meta.StarTreeMetadata;
 import org.opensearch.index.compositeindex.datacube.startree.node.InMemoryTreeNode;
 import org.opensearch.index.compositeindex.datacube.startree.node.StarTreeNodeType;
@@ -717,11 +719,11 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
         metaOut.close();
         dataOut.close();
 
-        LinkedHashMap<String, DocValuesType> fieldsMap = new LinkedHashMap<>();
-        fieldsMap.put("field1", DocValuesType.SORTED_NUMERIC);
-        fieldsMap.put("field3", DocValuesType.SORTED_NUMERIC);
-        fieldsMap.put("field5", DocValuesType.SORTED_NUMERIC);
-        fieldsMap.put("field8", DocValuesType.SORTED_NUMERIC);
+        LinkedHashMap<String, DimensionConfig> fieldsMap = new LinkedHashMap<>();
+        fieldsMap.put("field1", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
+        fieldsMap.put("field3", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
+        fieldsMap.put("field5", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
+        fieldsMap.put("field8", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
 
         StarTreeMetadata starTreeMetadata = new StarTreeMetadata(
             "test",
@@ -746,10 +748,10 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
             330
         );
 
-        LinkedHashMap<String, DocValuesType> fieldsMap1 = new LinkedHashMap<>();
-        fieldsMap1.put("fieldC", DocValuesType.SORTED_NUMERIC);
-        fieldsMap1.put("fieldB", DocValuesType.SORTED_NUMERIC);
-        fieldsMap1.put("fieldL", DocValuesType.SORTED_NUMERIC);
+        LinkedHashMap<String, DimensionConfig> fieldsMap1 = new LinkedHashMap<>();
+        fieldsMap1.put("fieldC", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
+        fieldsMap1.put("fieldB", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
+        fieldsMap1.put("fieldL", new DimensionConfig(DocValuesType.SORTED_NUMERIC, DimensionDataType.LONG));
 
         StarTreeMetadata starTreeMetadata2 = new StarTreeMetadata(
             "test",
@@ -768,7 +770,7 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
             1287
         );
 
-        LinkedHashMap<String, DocValuesType> totalDimensionFields = new LinkedHashMap<>(starTreeMetadata.getDimensionFields());
+        LinkedHashMap<String, DimensionConfig> totalDimensionFields = new LinkedHashMap<>(starTreeMetadata.getDimensionFields());
         totalDimensionFields.putAll(starTreeMetadata2.getDimensionFields());
 
         List<Metric> metrics = new ArrayList<>();
