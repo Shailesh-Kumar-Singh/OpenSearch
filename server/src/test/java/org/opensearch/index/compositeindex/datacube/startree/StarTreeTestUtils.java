@@ -279,14 +279,21 @@ public class StarTreeTestUtils {
 
         assertEquals(expectedStarTreeMetadata.getCompositeFieldName(), resultStarTreeMetadata.getCompositeFieldName());
         assertEquals(expectedStarTreeMetadata.getCompositeFieldType(), resultStarTreeMetadata.getCompositeFieldType());
+
         assertEquals(expectedStarTreeMetadata.getDimensionFields().size(), resultStarTreeMetadata.getDimensionFields().size());
-        for (int i = 0; i < expectedStarTreeMetadata.getDimensionFields().size(); i++) {
-            assertEquals(expectedStarTreeMetadata.getDimensionFields().get(i), resultStarTreeMetadata.getDimensionFields().get(i));
-        }
+        expectedStarTreeMetadata.getDimensionFields().forEach((dimensionField, dimensionConfig) -> {
+            assertEquals(
+                dimensionConfig.getDocValuesType(),
+                resultStarTreeMetadata.getDimensionFields().get(dimensionField).getDocValuesType()
+            );
+            assertEquals(
+                dimensionConfig.getDimensionDataType(),
+                resultStarTreeMetadata.getDimensionFields().get(dimensionField).getDimensionDataType()
+            );
+        });
+
         assertEquals(expectedStarTreeMetadata.getMetrics().size(), resultStarTreeMetadata.getMetrics().size());
-
         for (int i = 0; i < expectedStarTreeMetadata.getMetrics().size(); i++) {
-
             Metric expectedMetric = expectedStarTreeMetadata.getMetrics().get(i);
             Metric resultMetric = resultStarTreeMetadata.getMetrics().get(i);
             assertEquals(expectedMetric.getField(), resultMetric.getField());

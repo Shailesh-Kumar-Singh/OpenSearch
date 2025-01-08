@@ -192,7 +192,7 @@ public class StarTreeDocumentsSorterTests extends OpenSearchTestCase {
         for (int i = 0; i < numDimensions; i++) {
             Boolean isUnsignedLong = random.nextBoolean();
 
-            if (isUnsignedLong) dimensionsOrder.add(new NumericDimension("fieldName"));
+            if (!isUnsignedLong) dimensionsOrder.add(new NumericDimension("fieldName"));
             else dimensionsOrder.add(new UnsignedLongDimension("fieldName"));
         }
 

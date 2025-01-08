@@ -11,7 +11,7 @@ package org.opensearch.index.compositeindex.datacube;
 import org.opensearch.common.annotation.ExperimentalApi;
 
 /**
- * Represents the type of comparison to be performed on a dimension.
+ * Represents the data type of the dimension value.
  *
  * @opensearch.experimental
  */

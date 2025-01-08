@@ -68,7 +68,7 @@ public class StarTreeMetadata extends CompositeIndexMetadata {
      * Map of dimension fields to their associated DocValuesType. Insertion order needs to be maintained
      * as it dictates dimensionSplitOrder
      */
-    LinkedHashMap<String, DimensionConfig> dimensionFieldToDimensionConfigMap;
+    private LinkedHashMap<String, DimensionConfig> dimensionFieldToDimensionConfigMap;
 
     /**
      * List of metrics, containing field names and associated metric statistics.

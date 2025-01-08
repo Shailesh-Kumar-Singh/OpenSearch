@@ -12,6 +12,11 @@ import org.apache.lucene.index.DocValuesType;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.index.compositeindex.datacube.DimensionDataType;
 
+/**
+ * Class to store DocValuesType and DimensionDataType for a dimension.
+ *
+ * @opensearch.experimental
+ */
 @ExperimentalApi
 public class DimensionConfig {
 

@@ -13,6 +13,11 @@ import org.opensearch.index.mapper.CompositeDataCubeFieldType;
 
 import java.io.IOException;
 
+/**
+ * Unsigned Long dimension class
+ *
+ * @opensearch.experimental
+ */
 public class UnsignedLongDimension extends NumericDimension {
 
     public static final String UNSIGNED_LONG = "unsigned_long";
