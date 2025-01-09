@@ -31,6 +31,11 @@ public enum DimensionDataType {
             }
             return Long.compare(a, b);
         }
+
+        @Override
+        Long parse(String value) {
+            return Long.parseLong(value);
+        }
     },
     UNSIGNED_LONG {
         @Override
@@ -46,7 +51,14 @@ public enum DimensionDataType {
             }
             return Long.compareUnsigned(a, b);
         }
+
+        @Override
+        Long parse(String value) {
+            return Long.parseUnsignedLong(value);
+        }
     };
 
     abstract int compare(Long a, Long b);
+
+    abstract Long parse(String value);
 }

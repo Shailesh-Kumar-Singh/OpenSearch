@@ -54,6 +54,7 @@ public class StarTreeFilterTests extends AggregatorTestCase {
     private static final String FIELD_NAME = "field";
     private static final String SNDV = "sndv";
     private static final String SDV = "sdv";
+    private static final String UNSIGNED_LONG_DIMENSION = "unsignedLongDimension";
     private static final String DV = "dv";
 
     @Before
@@ -98,6 +99,7 @@ public class StarTreeFilterTests extends AggregatorTestCase {
         List<Document> docs = new ArrayList<>();
         for (int i = 0; i < totalDocs; i++) {
             Document doc = new Document();
+            doc.add(new SortedNumericDocValuesField(UNSIGNED_LONG_DIMENSION, -1 * i));
             doc.add(new SortedNumericDocValuesField(SNDV, i));
             doc.add(new SortedNumericDocValuesField(DV, 2 * i));
             doc.add(new SortedNumericDocValuesField(FIELD_NAME, 3 * i));
@@ -128,6 +130,12 @@ public class StarTreeFilterTests extends AggregatorTestCase {
         // single filter - matches docs
         starTreeDocCount = getDocCountFromStarTree(starTreeDocValuesReader, Map.of(SNDV, 0L), context);
         docCount = getDocCount(docs, Map.of(SNDV, 0L));
+        assertEquals(1, docCount);
+        assertEquals(docCount, starTreeDocCount);
+
+        // single filter - matches docs
+        starTreeDocCount = getDocCountFromStarTree(starTreeDocValuesReader, Map.of(UNSIGNED_LONG_DIMENSION, -1L), context);
+        docCount = getDocCount(docs, Map.of(UNSIGNED_LONG_DIMENSION, -1L));
         assertEquals(1, docCount);
         assertEquals(docCount, starTreeDocCount);
 
@@ -269,6 +277,9 @@ public class StarTreeFilterTests extends AggregatorTestCase {
             b.field("name", "sndv");
             b.endObject();
             b.startObject();
+            b.field("name", "unsignedLongDimension");
+            b.endObject();
+            b.startObject();
             b.field("name", "sdv");
             b.endObject();
             b.startObject();
@@ -301,6 +312,9 @@ public class StarTreeFilterTests extends AggregatorTestCase {
             b.endObject();
             b.endObject();
             b.startObject("properties");
+            b.startObject("unsignedLongDimension");
+            b.field("type", "unsigned_long");
+            b.endObject();
             b.startObject("sndv");
             b.field("type", "integer");
             b.endObject();
