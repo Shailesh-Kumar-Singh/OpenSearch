@@ -209,6 +209,11 @@ public class StarTreeTestUtils {
                 int childCount = 0;
                 boolean childStarNodeAsserted = false;
                 boolean nodeWithMinusOneValueFound = false;
+                /*
+                Since NULL nodes have a dimension value of -1, we need to track whether we have encountered any
+                default nodes with this dimension value. We will perform the assertNull() check only if we have not
+                yet found a default node with a dimension value of -1.
+                */
                 while (expectedChildrenIterator.hasNext()) {
                     StarTreeNode child = expectedChildrenIterator.next();
                     InMemoryTreeNode resultChildNode = null;

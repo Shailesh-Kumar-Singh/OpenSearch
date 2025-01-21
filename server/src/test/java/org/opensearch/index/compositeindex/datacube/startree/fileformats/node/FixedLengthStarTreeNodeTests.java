@@ -13,6 +13,7 @@ import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.opensearch.index.compositeindex.datacube.NumericDimension;
+import org.opensearch.index.compositeindex.datacube.UnsignedLongDimension;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeTestUtils;
 import org.opensearch.index.compositeindex.datacube.startree.fileformats.StarTreeWriter;
 import org.opensearch.index.compositeindex.datacube.startree.fileformats.meta.StarTreeMetadata;
@@ -226,6 +227,70 @@ public class FixedLengthStarTreeNodeTests extends OpenSearchTestCase {
         assertNull(starTreeNode.getChildForDimensionValue(randomLong(), new NumericDimension("field")));
         assertThrows(IllegalArgumentException.class, () -> starTreeNode.getChildrenIterator().next());
         assertThrows(UnsupportedOperationException.class, () -> starTreeNode.getChildrenIterator().remove());
+
+        dataIn.close();
+        directory.close();
+    }
+
+    public void testGetChildForUnsignedLongDimensionValue() throws IOException {
+
+        Directory directory = newFSDirectory(createTempDir());
+        IndexOutput dataOut = directory.createOutput("star-tree-data-2", IOContext.DEFAULT);
+        StarTreeWriter starTreeWriter = new StarTreeWriter();
+
+        InMemoryTreeNode node = new InMemoryTreeNode(0, randomInt(), randomInt(), randomFrom((byte) 0, (byte) -1, (byte) 1), -1);
+        node.setChildDimensionId(1);
+        node.setAggregatedDocId(randomInt());
+
+        InMemoryTreeNode starChild = new InMemoryTreeNode(node.getDimensionId() + 1, randomInt(), randomInt(), (byte) -1, -1);
+        starChild.setChildDimensionId(-1);
+        starChild.setAggregatedDocId(randomInt());
+        node.addChildNode(starChild, (long) ALL);
+
+        InMemoryTreeNode childWithMinus1 = new InMemoryTreeNode(node.getDimensionId() + 1, randomInt(), randomInt(), (byte) 0, -1);
+        childWithMinus1.setChildDimensionId(-1);
+        childWithMinus1.setAggregatedDocId(randomInt());
+
+        for (int i = 1; i < randomIntBetween(2, 5); i++) {
+            InMemoryTreeNode child = new InMemoryTreeNode(
+                node.getDimensionId() + 1,
+                randomInt(),
+                randomInt(),
+                (byte) 0,
+                node.getDimensionValue() + i
+            );
+            child.setChildDimensionId(-1);
+            child.setAggregatedDocId(randomInt());
+            node.addChildNode(child, child.getDimensionValue());
+        }
+
+        node.addChildNode(childWithMinus1, -1L);
+
+        InMemoryTreeNode nullChild = new InMemoryTreeNode(node.getDimensionId() + 1, randomInt(), randomInt(), (byte) 1, -1);
+        nullChild.setChildDimensionId(-1);
+        nullChild.setAggregatedDocId(randomInt());
+        node.addChildNode(nullChild, null);
+
+        long starTreeDataLength = starTreeWriter.writeStarTree(dataOut, node, 2 + node.getChildren().size(), "star-tree");
+
+        // asserting on the actual length of the star tree data file
+        assertEquals(starTreeDataLength, 33L * node.getChildren().size() + 2 * 33);
+        dataOut.close();
+
+        IndexInput dataIn = directory.openInput("star-tree-data-2", IOContext.READONCE);
+        StarTreeMetadata starTreeMetadata = mock(StarTreeMetadata.class);
+        when(starTreeMetadata.getDataLength()).thenReturn(starTreeDataLength);
+        when(starTreeMetadata.getDataStartFilePointer()).thenReturn(0L);
+
+        FixedLengthStarTreeNode starTreeNode = (FixedLengthStarTreeNode) StarTreeFactory.createStarTree(dataIn, starTreeMetadata);
+
+        long dimensionValue = -1;
+        FixedLengthStarTreeNode childNode = (FixedLengthStarTreeNode) starTreeNode.getChildForDimensionValue(
+            dimensionValue,
+            new UnsignedLongDimension("field")
+        );
+        assertNotNull(childNode);
+        assertEquals(dimensionValue, childNode.getDimensionValue());
 
         dataIn.close();
         directory.close();
