@@ -57,6 +57,10 @@ public interface Dimension extends ToXContent {
         return DimensionDataType.LONG;
     }
 
+    default Long parse(String value) {
+        return getDimensionDataType().parse(value);
+    }
+
     default Comparator<Long> comparator() {
         return (a, b) -> getDimensionDataType().compare(a, b);
     }

@@ -110,7 +110,13 @@ public class StarTreeQueryHelper {
                 .stream()
                 .map(Dimension::getField)
                 .collect(Collectors.toList());
-            queryMap = getStarTreePredicates(queryBuilder, supportedDimensions);
+
+            Map<String, Dimension> dimensionFieldtoDimensionMap = compositeFieldType.getDimensions()
+                .stream()
+                .collect(Collectors.toMap(Dimension::getField, dimension -> dimension, (existing, replacement) -> existing));
+
+            queryMap = getStarTreePredicates(queryBuilder, dimensionFieldtoDimensionMap);
+
             if (queryMap == null) {
                 return null;
             }
@@ -125,13 +131,15 @@ public class StarTreeQueryHelper {
      * @param queryBuilder to match star-tree supported query shape
      * @return predicates to match
      */
-    private static Map<String, Long> getStarTreePredicates(QueryBuilder queryBuilder, List<String> supportedDimensions) {
+    private static Map<String, Long> getStarTreePredicates(QueryBuilder queryBuilder, Map<String, Dimension> dimensionFieldtoDimensionMap) {
         TermQueryBuilder tq = (TermQueryBuilder) queryBuilder;
         String field = tq.fieldName();
-        if (!supportedDimensions.contains(field)) {
+        Dimension dimension = dimensionFieldtoDimensionMap.get(field);
+        if (dimension == null) {
             return null;
         }
-        long inputQueryVal = Long.parseLong(tq.value().toString());
+
+        long inputQueryVal = dimension.parse(tq.value().toString());
 
         // Create a map with the field and the value
         Map<String, Long> predicateMap = new HashMap<>();

@@ -40,6 +40,7 @@ import org.opensearch.index.compositeindex.datacube.Dimension;
 import org.opensearch.index.compositeindex.datacube.Metric;
 import org.opensearch.index.compositeindex.datacube.MetricStat;
 import org.opensearch.index.compositeindex.datacube.NumericDimension;
+import org.opensearch.index.compositeindex.datacube.UnsignedLongDimension;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.mapper.MapperService;
 import org.opensearch.index.mapper.NumberFieldMapper;
@@ -67,6 +68,7 @@ import org.junit.After;
 import org.junit.Before;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -122,6 +124,7 @@ public class MetricAggregatorTests extends AggregatorTestCase {
         int totalDocs = 100;
         final String SNDV = "sndv";
         final String DV = "dv";
+        final String UNSIGNED_LONG_DIMENSION = "unsignedLongDimension";
         int val;
 
         List<Document> docs = new ArrayList<>();
@@ -169,6 +172,7 @@ public class MetricAggregatorTests extends AggregatorTestCase {
         List<Dimension> supportedDimensions = new LinkedList<>();
         supportedDimensions.add(new NumericDimension(SNDV));
         supportedDimensions.add(new NumericDimension(DV));
+        supportedDimensions.add(new UnsignedLongDimension(UNSIGNED_LONG_DIMENSION));
 
         Query query = new MatchAllDocsQuery();
         // match-all query
@@ -234,50 +238,46 @@ public class MetricAggregatorTests extends AggregatorTestCase {
             query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
             queryBuilder = new TermQueryBuilder(queryField, queryValue);
 
-            testCase(
+            runTestCases(
                 indexSearcher,
                 query,
                 queryBuilder,
+                starTree,
+                supportedDimensions,
                 sumAggregationBuilder,
-                starTree,
-                supportedDimensions,
-                verifyAggregation(InternalSum::getValue)
-            );
-            testCase(
-                indexSearcher,
-                query,
-                queryBuilder,
                 maxAggregationBuilder,
-                starTree,
-                supportedDimensions,
-                verifyAggregation(InternalMax::getValue)
-            );
-            testCase(
-                indexSearcher,
-                query,
-                queryBuilder,
                 minAggregationBuilder,
-                starTree,
-                supportedDimensions,
-                verifyAggregation(InternalMin::getValue)
-            );
-            testCase(
-                indexSearcher,
-                query,
-                queryBuilder,
                 valueCountAggregationBuilder,
-                starTree,
-                supportedDimensions,
-                verifyAggregation(InternalValueCount::getValue)
+                avgAggregationBuilder
             );
-            testCase(
+        }
+
+        for (int cases = 0; cases < 100; cases++) {
+            String queryField;
+            queryField = UNSIGNED_LONG_DIMENSION;
+            long queryValue;
+            String queryValueString;
+            if (randomBoolean()) {
+                queryValue = 9223372036854775807L - random.nextInt(10000);
+            } else {
+                queryValue = -9223372036854775808L + random.nextInt(10000);
+            }
+            queryValueString = asUnsignedDecimalString(queryValue);
+
+            query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
+            queryBuilder = new TermQueryBuilder(queryField, queryValueString);
+
+            runTestCases(
                 indexSearcher,
                 query,
                 queryBuilder,
-                avgAggregationBuilder,
                 starTree,
                 supportedDimensions,
-                verifyAggregation(InternalAvg::getValue)
+                sumAggregationBuilder,
+                maxAggregationBuilder,
+                minAggregationBuilder,
+                valueCountAggregationBuilder,
+                avgAggregationBuilder
             );
         }
 
@@ -387,6 +387,75 @@ public class MetricAggregatorTests extends AggregatorTestCase {
 
         ir.close();
         directory.close();
+    }
+
+    public String asUnsignedDecimalString(long l) {
+        BigInteger b = BigInteger.valueOf(l);
+        if (b.signum() < 0) {
+            b = b.add(BigInteger.ONE.shiftLeft(64));
+        }
+        return b.toString();
+    }
+
+    private void runTestCases(
+        IndexSearcher indexSearcher,
+        Query query,
+        QueryBuilder queryBuilder,
+        CompositeIndexFieldInfo starTree,
+        List<Dimension> supportedDimensions,
+        SumAggregationBuilder sumAggregationBuilder,
+        MaxAggregationBuilder maxAggregationBuilder,
+        MinAggregationBuilder minAggregationBuilder,
+        ValueCountAggregationBuilder valueCountAggregationBuilder,
+        AvgAggregationBuilder avgAggregationBuilder
+    ) throws IOException {
+
+        testCase(
+            indexSearcher,
+            query,
+            queryBuilder,
+            sumAggregationBuilder,
+            starTree,
+            supportedDimensions,
+            verifyAggregation(InternalSum::getValue)
+        );
+        testCase(
+            indexSearcher,
+            query,
+            queryBuilder,
+            maxAggregationBuilder,
+            starTree,
+            supportedDimensions,
+            verifyAggregation(InternalMax::getValue)
+        );
+        testCase(
+            indexSearcher,
+            query,
+            queryBuilder,
+            minAggregationBuilder,
+            starTree,
+            supportedDimensions,
+            verifyAggregation(InternalMin::getValue)
+        );
+        testCase(
+            indexSearcher,
+            query,
+            queryBuilder,
+            valueCountAggregationBuilder,
+            starTree,
+            supportedDimensions,
+            verifyAggregation(InternalValueCount::getValue)
+        );
+        testCase(
+            indexSearcher,
+            query,
+            queryBuilder,
+            avgAggregationBuilder,
+            starTree,
+            supportedDimensions,
+            verifyAggregation(InternalAvg::getValue)
+        );
+
     }
 
     <T, R extends Number> BiConsumer<T, T> verifyAggregation(Function<T, R> valueExtractor) {
