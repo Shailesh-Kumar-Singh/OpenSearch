@@ -235,7 +235,7 @@ public class OffHeapStarTreeBuilder extends BaseStarTreeBuilder {
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
-                }, starTreeDocumentFileManager.starTreeField.getDimensionsOrder());
+                }, dimensionComparators);
             } catch (UncheckedIOException ex) {
                 // Unwrap UncheckedIOException and throw as IOException
                 if (ex.getCause() != null) {
@@ -335,7 +335,7 @@ public class OffHeapStarTreeBuilder extends BaseStarTreeBuilder {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        }, starTreeDocumentFileManager.starTreeField.getDimensionsOrder());
+        }, dimensionComparators);
 
         // Create an iterator for aggregated documents
         return new Iterator<StarTreeDocument>() {

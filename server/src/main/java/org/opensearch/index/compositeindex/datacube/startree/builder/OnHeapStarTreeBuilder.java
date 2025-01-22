@@ -13,7 +13,6 @@ import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.LongValues;
 import org.opensearch.common.annotation.ExperimentalApi;
-import org.opensearch.index.compositeindex.datacube.Dimension;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeDocument;
 import org.opensearch.index.compositeindex.datacube.startree.StarTreeField;
 import org.opensearch.index.compositeindex.datacube.startree.index.StarTreeValues;
@@ -161,7 +160,7 @@ public class OnHeapStarTreeBuilder extends BaseStarTreeBuilder {
     Iterator<StarTreeDocument> sortAndAggregateStarTreeDocuments(StarTreeDocument[] starTreeDocuments, boolean isMerge) {
 
         // sort all the documents
-        sortStarTreeDocumentsFromDimensionId(starTreeDocuments, 0);
+        sortStarTreeDocumentsFromDimensionId(starTreeDocuments, -1);
 
         // merge the documents
         return mergeStarTreeDocuments(starTreeDocuments, isMerge);
@@ -222,7 +221,7 @@ public class OnHeapStarTreeBuilder extends BaseStarTreeBuilder {
         }
 
         // sort star tree documents from given dimension id (as previous dimension ids have already been processed)
-        sortStarTreeDocumentsFromDimensionId(starTreeDocuments, dimensionId + 1);
+        sortStarTreeDocumentsFromDimensionId(starTreeDocuments, dimensionId);
 
         return new Iterator<StarTreeDocument>() {
             boolean hasNext = true;
@@ -271,19 +270,9 @@ public class OnHeapStarTreeBuilder extends BaseStarTreeBuilder {
      */
     private void sortStarTreeDocumentsFromDimensionId(StarTreeDocument[] starTreeDocuments, int dimensionId) {
         Arrays.sort(starTreeDocuments, (doc1, doc2) -> {
-            List<Dimension> dimensionsOrder = starTreeField.getDimensionsOrder();
-            int totalDimensions = dimensionsOrder.size();
-
-            int docDimensionIndex = dimensionId;
-            for (int i = dimensionId; i < totalDimensions; i++) {
-                Dimension dimension = dimensionsOrder.get(i);
-                int subDimensionsToProcess = dimension.getNumSubDimensions();
-                while (subDimensionsToProcess > 0) {
-                    if (!Objects.equals(doc1.dimensions[docDimensionIndex], doc2.dimensions[docDimensionIndex])) {
-                        return dimension.comparator().compare(doc1.dimensions[docDimensionIndex], doc2.dimensions[docDimensionIndex]);
-                    }
-                    docDimensionIndex++;
-                    subDimensionsToProcess--;
+            for (int i = dimensionId + 1; i < numDimensions; i++) {
+                if (!Objects.equals(doc1.dimensions[i], doc2.dimensions[i])) {
+                    return dimensionComparators.get(i).compare(doc1.dimensions[i], doc2.dimensions[i]);
                 }
             }
             return 0;
