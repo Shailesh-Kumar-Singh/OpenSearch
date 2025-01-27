@@ -139,7 +139,9 @@ public abstract class BaseStarTreeBuilder implements StarTreeBuilder {
         int numDims = 0;
         for (Dimension dim : starTreeField.getDimensionsOrder()) {
             numDims += dim.getNumSubDimensions();
-            dimensionComparators.addAll(Collections.nCopies(dim.getNumSubDimensions(), dim.comparator()));
+            for (int i = 0; i < dim.getNumSubDimensions(); i++) {
+                dimensionComparators.add(dim.comparator());
+            }
             dimensionsSplitOrder.add(dim);
         }
         this.numDimensions = numDims;
