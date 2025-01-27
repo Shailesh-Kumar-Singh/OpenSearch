@@ -177,11 +177,9 @@ public class NumberFieldMapper extends ParametrizedFieldMapper {
 
         @Override
         public Optional<DimensionType> getSupportedDataCubeDimensionType() {
-            return isUnsignedLong() ? Optional.of(DimensionType.UNSIGNED_LONG) : Optional.of(DimensionType.NUMERIC);
-        }
-
-        private Boolean isUnsignedLong() {
-            return type.numericType.equals(NumericType.UNSIGNED_LONG);
+            return type.numericType.equals(NumericType.UNSIGNED_LONG)
+                ? Optional.of(DimensionType.UNSIGNED_LONG)
+                : Optional.of(DimensionType.NUMERIC);
         }
 
         @Override

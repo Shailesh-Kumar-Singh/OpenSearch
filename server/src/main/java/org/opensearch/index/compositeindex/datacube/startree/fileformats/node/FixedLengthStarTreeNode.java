@@ -239,6 +239,7 @@ public class FixedLengthStarTreeNode implements StarTreeNode {
      * Performs a binary search to find a child node with the given dimension value.
      *
      * @param dimensionValue The dimension value to search for
+     * @param dimension       the parent dimension node
      * @return The child node if found, null otherwise
      * @throws IOException If there's an error reading from the input
      */
