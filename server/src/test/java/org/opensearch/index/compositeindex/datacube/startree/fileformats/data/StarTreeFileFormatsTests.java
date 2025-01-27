@@ -81,7 +81,7 @@ public class StarTreeFileFormatsTests extends OpenSearchTestCase {
                     StarTreeNode child = childrenIterator.next();
                     if (child.getStarTreeNodeType() == StarTreeNodeType.DEFAULT.getValue()) {
                         assertStarTreeNode(
-                            starTreeNode.getChildForDimensionValue(child.getDimensionValue(), new NumericDimension(("field"))),
+                            starTreeNode.getChildForDimensionValue(child.getDimensionValue()),
                             inMemoryTreeNodeMap.get(child.getDimensionValue())
                         );
                         assertNull(starTreeNode.getChildStarNode());
@@ -123,8 +123,7 @@ public class StarTreeFileFormatsTests extends OpenSearchTestCase {
         for (int i = 0; i < maxLevels - 1; i++) {
             InMemoryTreeNode randomChildNode = randomFrom(inMemoryTreeNode.getChildren().values());
             StarTreeNode randomStarTreeChildNode = starTreeNode.getChildForDimensionValue(
-                randomChildNode.getDimensionValue(),
-                new NumericDimension("field")
+                randomChildNode.getDimensionValue()
             );
 
             assertNotNull(randomStarTreeChildNode);

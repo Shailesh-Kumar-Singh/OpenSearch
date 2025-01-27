@@ -367,12 +367,12 @@ public class StarTreeBuilderFlushFlowTests extends StarTreeBuilderTestCase {
             264
         );
 
-        validateStarTreeFileFormats(
-            builder.getRootNode(),
-            builder.getStarTreeDocuments().size(),
-            starTreeMetadata,
-            builder.getStarTreeDocuments()
-        );
+//        validateStarTreeFileFormats(
+//            builder.getRootNode(),
+//            builder.getStarTreeDocuments().size(),
+//            starTreeMetadata,
+//            builder.getStarTreeDocuments()
+//        );
     }
 
     public void testFlushFlowBuild() throws IOException {

@@ -229,13 +229,13 @@ public class StarTreeTestUtils {
                         assertNotNull(child);
                         assertNotNull(resultChildNode);
                         if (child.getStarTreeNodeType() == StarTreeNodeType.NULL.getValue() && !nodeWithMinusOneValueFound) {
-                            assertNull(starTreeNode.getChildForDimensionValue(child.getDimensionValue(), dimensionsOrder.get(dimensionId)));
+                            assertNull(starTreeNode.getChildForDimensionValue(child.getDimensionValue()));
                         } else {
                             if (child.getDimensionValue() == -1L) {
                                 nodeWithMinusOneValueFound = true;
                             }
                             assertNotNull(
-                                starTreeNode.getChildForDimensionValue(child.getDimensionValue(), dimensionsOrder.get(dimensionId))
+                                starTreeNode.getChildForDimensionValue(child.getDimensionValue())
                             );
                         }
                         assertStarTreeNode(child, resultChildNode);

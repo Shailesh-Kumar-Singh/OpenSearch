@@ -194,7 +194,7 @@ public class FixedLengthStarTreeNode implements StarTreeNode {
     }
 
     @Override
-    public StarTreeNode getChildForDimensionValue(Long dimensionValue, Dimension dimension) throws IOException {
+    public StarTreeNode getChildForDimensionValue(Long dimensionValue) throws IOException {
         // there will be no children for leaf nodes
         if (isLeaf()) {
             return null;
@@ -202,7 +202,7 @@ public class FixedLengthStarTreeNode implements StarTreeNode {
 
         StarTreeNode resultStarTreeNode = null;
         if (null != dimensionValue) {
-            resultStarTreeNode = binarySearchChild(dimensionValue, dimension);
+            resultStarTreeNode = binarySearchChild(dimensionValue);
         }
         return resultStarTreeNode;
     }
@@ -239,11 +239,10 @@ public class FixedLengthStarTreeNode implements StarTreeNode {
      * Performs a binary search to find a child node with the given dimension value.
      *
      * @param dimensionValue The dimension value to search for
-     * @param dimension       the parent dimension node
      * @return The child node if found, null otherwise
      * @throws IOException If there's an error reading from the input
      */
-    private FixedLengthStarTreeNode binarySearchChild(long dimensionValue, Dimension dimension) throws IOException {
+    private FixedLengthStarTreeNode binarySearchChild(long dimensionValue) throws IOException {
 
         int low = firstChildId;
 
@@ -258,15 +257,14 @@ public class FixedLengthStarTreeNode implements StarTreeNode {
             high--;
         }
 
-        Comparator<Long> comparator = dimension.comparator();
         while (low <= high) {
             int mid = low + (high - low) / 2;
             FixedLengthStarTreeNode midNode = new FixedLengthStarTreeNode(in, mid);
             long midDimensionValue = midNode.getDimensionValue();
-            int compare = comparator.compare(midDimensionValue, dimensionValue);
-            if (compare == 0) {
+
+            if (midDimensionValue == dimensionValue) {
                 return midNode;
-            } else if (compare < 0) {
+            } else if (midDimensionValue < dimensionValue) {
                 low = mid + 1;
             } else {
                 high = mid - 1;
