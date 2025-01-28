@@ -9,7 +9,6 @@
 package org.opensearch.index.compositeindex.datacube.startree.node;
 
 import org.opensearch.common.annotation.ExperimentalApi;
-import org.opensearch.index.compositeindex.datacube.Dimension;
 
 import java.io.IOException;
 import java.util.Iterator;

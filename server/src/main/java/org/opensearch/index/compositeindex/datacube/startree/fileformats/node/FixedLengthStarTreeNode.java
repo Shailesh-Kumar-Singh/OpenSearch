@@ -8,13 +8,11 @@
 package org.opensearch.index.compositeindex.datacube.startree.fileformats.node;
 
 import org.apache.lucene.store.RandomAccessInput;
-import org.opensearch.index.compositeindex.datacube.Dimension;
 import org.opensearch.index.compositeindex.datacube.startree.node.StarTreeNode;
 import org.opensearch.index.compositeindex.datacube.startree.node.StarTreeNodeType;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.Comparator;
 import java.util.Iterator;
 
 /**

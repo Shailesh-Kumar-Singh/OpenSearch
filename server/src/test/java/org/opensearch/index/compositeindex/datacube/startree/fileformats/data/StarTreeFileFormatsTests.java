@@ -12,7 +12,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
-import org.opensearch.index.compositeindex.datacube.NumericDimension;
 import org.opensearch.index.compositeindex.datacube.startree.fileformats.StarTreeWriter;
 import org.opensearch.index.compositeindex.datacube.startree.fileformats.meta.StarTreeMetadata;
 import org.opensearch.index.compositeindex.datacube.startree.node.InMemoryTreeNode;
@@ -122,9 +121,7 @@ public class StarTreeFileFormatsTests extends OpenSearchTestCase {
 
         for (int i = 0; i < maxLevels - 1; i++) {
             InMemoryTreeNode randomChildNode = randomFrom(inMemoryTreeNode.getChildren().values());
-            StarTreeNode randomStarTreeChildNode = starTreeNode.getChildForDimensionValue(
-                randomChildNode.getDimensionValue()
-            );
+            StarTreeNode randomStarTreeChildNode = starTreeNode.getChildForDimensionValue(randomChildNode.getDimensionValue());
 
             assertNotNull(randomStarTreeChildNode);
             assertStarTreeNode(randomStarTreeChildNode, randomChildNode);

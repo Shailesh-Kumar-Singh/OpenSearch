@@ -234,9 +234,7 @@ public class StarTreeTestUtils {
                             if (child.getDimensionValue() == -1L) {
                                 nodeWithMinusOneValueFound = true;
                             }
-                            assertNotNull(
-                                starTreeNode.getChildForDimensionValue(child.getDimensionValue())
-                            );
+                            assertNotNull(starTreeNode.getChildForDimensionValue(child.getDimensionValue()));
                         }
                         assertStarTreeNode(child, resultChildNode);
                         assertNotEquals(child.getStarTreeNodeType(), StarTreeNodeType.STAR.getValue());
