@@ -10,7 +10,8 @@ package org.opensearch.index.compositeindex.datacube.startree.builder;
 
 import org.apache.lucene.codecs.DocValuesConsumer;
 import org.apache.lucene.codecs.DocValuesProducer;
-import org.apache.lucene.codecs.lucene912.Lucene912Codec;
+import org.apache.lucene.codecs.lucene101.Lucene101Codec;
+import org.apache.lucene.index.DocValuesSkipIndexType;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
@@ -634,12 +635,12 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
         SegmentInfo segmentInfo = new SegmentInfo(
             directory,
             Version.LATEST,
-            Version.LUCENE_9_11_0,
+            Version.LUCENE_10_1_0,
             "test_segment",
             7,
             false,
             false,
-            new Lucene912Codec(),
+            new Lucene101Codec(),
             new HashMap<>(),
             UUID.randomUUID().toString().substring(0, 16).getBytes(StandardCharsets.UTF_8),
             new HashMap<>(),
@@ -657,6 +658,7 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
                 true,
                 IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS,
                 DocValuesType.SORTED_NUMERIC,
+                DocValuesSkipIndexType.RANGE,
                 -1,
                 Collections.emptyMap(),
                 0,
@@ -917,12 +919,12 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
         SegmentInfo segmentInfo = new SegmentInfo(
             directory,
             Version.LATEST,
-            Version.LUCENE_9_11_0,
+            Version.LUCENE_10_1_0,
             "test_segment",
             7,
             false,
             false,
-            new Lucene912Codec(),
+            new Lucene101Codec(),
             new HashMap<>(),
             UUID.randomUUID().toString().substring(0, 16).getBytes(StandardCharsets.UTF_8),
             new HashMap<>(),
@@ -940,6 +942,7 @@ public class StarTreeBuildMetricTests extends StarTreeBuilderTestCase {
                 true,
                 IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS,
                 DocValuesType.SORTED_NUMERIC,
+                DocValuesSkipIndexType.RANGE,
                 -1,
                 Collections.emptyMap(),
                 0,
