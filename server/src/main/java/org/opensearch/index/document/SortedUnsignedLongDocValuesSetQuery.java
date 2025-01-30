@@ -45,7 +45,7 @@ public abstract class SortedUnsignedLongDocValuesSetQuery extends Query {
     SortedUnsignedLongDocValuesSetQuery(String field, BigInteger[] numbers) {
         this.field = Objects.requireNonNull(field);
         Arrays.sort(numbers);
-        this.numbers = new LongHashSet(Arrays.stream(numbers).mapToLong(n -> n.longValue()).toArray());
+        this.numbers = new LongHashSet(Arrays.stream(numbers).mapToLong(n -> n.longValue()).toArray(), true);
     }
 
     @Override

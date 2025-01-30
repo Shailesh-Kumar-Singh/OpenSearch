@@ -30,8 +30,12 @@ public final class LongHashSet implements Accountable {
     /** maximum value in the set, or Long.MIN_VALUE for an empty set */
     public final long maxValue;
 
-    /** Construct a set. Values must be in sorted order. */
     public LongHashSet(long[] values) {
+        this(values, false);
+    }
+
+    /** Construct a set. Values must be in sorted order. */
+    public LongHashSet(long[] values, boolean isUnsignedLong) {
         int tableSize = Math.toIntExact(values.length * 3L / 2);
         tableSize = 1 << PackedInts.bitsRequired(tableSize); // make it a power of 2
         assert tableSize >= values.length * 3L / 2;
@@ -40,7 +44,7 @@ public final class LongHashSet implements Accountable {
         mask = tableSize - 1;
         boolean hasMissingValue = false;
         int size = 0;
-        long previousValue = Long.MIN_VALUE; // for assert
+        long previousValue = isUnsignedLong ? 0 : Long.MIN_VALUE; // for assert
         for (long value : values) {
             if (value == MISSING) {
                 size += hasMissingValue ? 0 : 1;
@@ -48,13 +52,21 @@ public final class LongHashSet implements Accountable {
             } else if (add(value)) {
                 ++size;
             }
-            assert value >= previousValue : "values must be provided in sorted order";
+            assertBasedOnDataType(value, previousValue, isUnsignedLong);
             previousValue = value;
         }
         this.hasMissingValue = hasMissingValue;
         this.size = size;
         this.minValue = values.length == 0 ? Long.MAX_VALUE : values[0];
         this.maxValue = values.length == 0 ? Long.MIN_VALUE : values[values.length - 1];
+    }
+
+    private void assertBasedOnDataType(long value, long previousValue, boolean isUnsignedLong) {
+        if (isUnsignedLong) {
+            assert Long.compareUnsigned(value, previousValue) >= 0 : "values must be provided in sorted order";
+        } else {
+            assert value >= previousValue : "values must be provided in sorted order";
+        }
     }
 
     private boolean add(long l) {
