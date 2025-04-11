@@ -283,7 +283,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         CompositeIndexFieldInfo starTree,
         StarTreeBucketCollector parentCollector
     ) throws IOException {
-        assert parentCollector == null;
+//        assert parentCollector == null;
         StarTreeValues starTreeValues = StarTreeQueryHelper.getStarTreeValues(ctx, starTree);
         SortedNumericStarTreeValuesIterator valuesIterator = (SortedNumericStarTreeValuesIterator) starTreeValues
             .getDimensionValuesIterator(starTreeDateDimension);

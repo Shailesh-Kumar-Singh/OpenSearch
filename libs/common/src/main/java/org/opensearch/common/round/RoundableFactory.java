@@ -38,7 +38,7 @@ public final class RoundableFactory {
      *  - jdk.incubator.vector.LongVector is available (--add-modules=jdk.incubator.vector is passed)
      */
     private static final class VectorCheck {
-        final static int SPECIES_PREFERRED = jdk.incubator.vector.LongVector.SPECIES_PREFERRED.length();
+        final static int SPECIES_PREFERRED = 1;//jdk.incubator.vector.LongVector.SPECIES_PREFERRED.length();
     }
 
     static {
@@ -67,7 +67,7 @@ public final class RoundableFactory {
         if (size <= LINEAR_SEARCH_MAX_SIZE) {
             return new BidirectionalLinearSearcher(values, size);
         } else if (USE_BTREE_SEARCHER) {
-            return new BtreeSearcher(values, size);
+            return null;
         } else {
             return new BinarySearcher(values, size);
         }

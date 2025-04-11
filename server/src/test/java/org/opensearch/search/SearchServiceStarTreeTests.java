@@ -15,6 +15,7 @@ import org.opensearch.action.search.SearchRequest;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.Rounding;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.Strings;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.codec.composite.CompositeIndexFieldInfo;
@@ -64,9 +65,8 @@ import org.opensearch.search.startree.StarTreeQueryContext;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Supplier;
 
 import static org.opensearch.common.util.FeatureFlags.STAR_TREE_INDEX;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateHistogram;
@@ -79,6 +79,7 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.opensearch.search.aggregations.AggregationBuilders.*;
 
 /**
  * Tests for validating query shapes which can be resolved using star-tree index
@@ -239,6 +240,151 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
 
         setStarTreeIndexSetting(null);
         searchContext.close();
+    }
+
+    public void testStarTreeNestedMetricAggregations() throws IOException {
+        FeatureFlags.initializeFeatureFlags(Settings.builder().put(FeatureFlags.STAR_TREE_INDEX, true).build());
+        setStarTreeIndexSetting("true");
+
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+            .put(StarTreeIndexSettings.IS_COMPOSITE_INDEX_SETTING.getKey(), true)
+            .put(IndexMetadata.INDEX_APPEND_ONLY_ENABLED_SETTING.getKey(), true)
+            .build();
+        CreateIndexRequestBuilder builder = client().admin()
+            .indices()
+            .prepareCreate("test")
+            .setSettings(settings)
+            .setMapping(NumericTermsAggregatorTests.getExpandedMapping(1, false));
+
+        createIndex("test", builder);
+
+        IndicesService indicesService = getInstanceFromNode(IndicesService.class);
+        IndexService indexService = indicesService.indexServiceSafe(resolveIndex("test"));
+        IndexShard indexShard = indexService.getShard(0);
+        ShardSearchRequest request = new ShardSearchRequest(
+            OriginalIndices.NONE,
+            new SearchRequest().allowPartialSearchResults(true),
+            indexShard.shardId(),
+            1,
+            new AliasFilter(null, Strings.EMPTY_ARRAY),
+            1.0f,
+            -1,
+            null,
+            null
+        );
+
+        QueryBuilder baseQuery;
+        SearchContext searchContext = createSearchContext(indexService);
+        StarTreeFieldConfiguration starTreeFieldConfiguration = new StarTreeFieldConfiguration(
+            1,
+            Collections.emptySet(),
+            StarTreeFieldConfiguration.StarTreeBuildMode.ON_HEAP
+        );
+
+
+        String TIMESTAMP_FIELD = "timestamp";
+        String KEYWORD_FIELD = "clientip";
+        String NUMERIC_FIELD = "size";
+
+        // List to store base aggregation builders without subAggregations
+        List<Supplier<ValuesSourceAggregationBuilder<?>>> aggregationSuppliers = List.of(
+            () -> terms("term").field(KEYWORD_FIELD),
+            () -> terms("term").field(NUMERIC_FIELD),
+            () -> dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY),
+            () -> range("range").field(NUMERIC_FIELD).addRange(0, 10)
+        );
+
+        ValuesSourceAggregationBuilder<?>[] aggBuilders = {
+            sum("_sum").field(FIELD_NAME),
+            max("_max").field(FIELD_NAME),
+            min("_min").field(FIELD_NAME),
+            count("_count").field(FIELD_NAME),
+        };
+
+        for (Supplier<ValuesSourceAggregationBuilder<?>> firstSupplier : aggregationSuppliers) {
+            for (Supplier<ValuesSourceAggregationBuilder<?>> secondSupplier : aggregationSuppliers) {
+                for (ValuesSourceAggregationBuilder<?> metricAgg : aggBuilders) {
+
+                    ValuesSourceAggregationBuilder<?> secondBucket = secondSupplier.get().subAggregation(metricAgg);
+                    ValuesSourceAggregationBuilder<?> firstBucket = firstSupplier.get().subAggregation(secondBucket);
+
+                    SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(0)
+                        .query(new MatchAllQueryBuilder())
+                        .aggregation(firstBucket);
+
+                    MetricStat stat = getMetricStatFromAgg(metricAgg);
+                    List<Metric> metrics = List.of(new Metric(FIELD_NAME, List.of(stat)));
+
+                    assertStarTreeContext(
+                        request,
+                        sourceBuilder,
+                        getStarTreeQueryContext(
+                            searchContext,
+                            starTreeFieldConfiguration,
+                            "startree1",
+                            -1,
+                            getDimensions(
+                                aggregationSuppliers.indexOf(firstSupplier),
+                                aggregationSuppliers.indexOf(secondSupplier)
+                            ),
+                            metrics,
+                            new MatchAllQueryBuilder(),
+                            sourceBuilder,
+                            true
+                        ),
+                        -1
+                    );
+                }
+            }
+        }
+
+
+        for (Supplier<ValuesSourceAggregationBuilder<?>> firstSupplier : aggregationSuppliers) {
+            for (Supplier<ValuesSourceAggregationBuilder<?>> secondSupplier : aggregationSuppliers) {
+                for (Supplier<ValuesSourceAggregationBuilder<?>> thirdSupplier : aggregationSuppliers) {
+                    for (ValuesSourceAggregationBuilder<?> metricAgg : aggBuilders) {
+
+                        ValuesSourceAggregationBuilder<?> thirdBucket = thirdSupplier.get().subAggregation(metricAgg);
+                        ValuesSourceAggregationBuilder<?> secondBucket = secondSupplier.get().subAggregation(thirdBucket);
+                        ValuesSourceAggregationBuilder<?> firstBucket = firstSupplier.get().subAggregation(secondBucket);
+
+                        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(0)
+                            .query(new MatchAllQueryBuilder())
+                            .aggregation(firstBucket);
+
+                        MetricStat stat = getMetricStatFromAgg(metricAgg);
+                        List<Metric> metrics = List.of(new Metric(FIELD_NAME, List.of(stat)));
+
+
+                        assertStarTreeContext(
+                            request,
+                            sourceBuilder,
+                            getStarTreeQueryContext(
+                                searchContext,
+                                starTreeFieldConfiguration,
+                                "startree1",
+                                -1,
+                                getDimensions(
+                                    aggregationSuppliers.indexOf(firstSupplier),
+                                    aggregationSuppliers.indexOf(secondSupplier),
+                                    aggregationSuppliers.indexOf(thirdSupplier)
+                                ),
+                                metrics,
+                                new MatchAllQueryBuilder(),
+                                sourceBuilder,
+                                true
+                            ),
+                            -1
+                        );
+                    }
+                }
+            }
+        }
+
+
+        setStarTreeIndexSetting(null);
     }
 
     /**
@@ -464,20 +610,20 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
         when(indexShard.segments(false)).thenReturn(List.of(segment, segment));
         when(searchContext.aggregations()).thenReturn(searchContextAggregations);
         when(searchContextAggregations.factories()).thenReturn(aggregatorFactories);
-        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[] { null, null });
+        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[]{null, null});
         StarTreeQueryContext starTreeQueryContext = new StarTreeQueryContext(searchContext, baseQuery);
 
         assertEquals(2, starTreeQueryContext.getAllCachedValues().length);
 
         // Asserting null values are ignored
-        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[] {});
+        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[]{});
         starTreeQueryContext = new StarTreeQueryContext(searchContext, baseQuery);
         starTreeQueryContext.maybeSetCachedNodeIdsForSegment(-1, null);
         assertNull(starTreeQueryContext.getAllCachedValues());
         assertNull(starTreeQueryContext.maybeGetCachedNodeIdsForSegment(0));
 
         // Assert correct cached value is returned
-        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[] { null, null });
+        when(aggregatorFactories.getFactories()).thenReturn(new AggregatorFactory[]{null, null});
         starTreeQueryContext = new StarTreeQueryContext(searchContext, baseQuery);
         FixedBitSet cachedValues = new FixedBitSet(22);
         starTreeQueryContext.maybeSetCachedNodeIdsForSegment(0, cachedValues);
@@ -905,5 +1051,37 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
             searchContext.getQueryShardContext().setStarTreeQueryContext(starTreeQueryContext);
         }
         return starTreeQueryContext;
+    }
+
+    private static List<Dimension> getDimensions(int... indices) {
+        return Arrays.stream(indices)
+            .mapToObj(SearchServiceStarTreeTests::getDimensionByIndex)
+            .toList();
+    }
+
+    private static Dimension getDimensionByIndex(int index) {
+        String TIMESTAMP_FIELD = "timestamp";
+        String KEYWORD_FIELD = "clientip";
+        String NUMERIC_FIELD = "size";
+        System.out.println(index);
+
+        return switch (index) {
+            case 0 -> new OrdinalDimension(KEYWORD_FIELD);
+            case 2 -> new DateDimension(
+                TIMESTAMP_FIELD,
+                List.of(new DateTimeUnitAdapter(Rounding.DateTimeUnit.DAY_OF_MONTH)),
+                DateFieldMapper.Resolution.MILLISECONDS
+            );
+            default -> new NumericDimension(NUMERIC_FIELD);
+        };
+    }
+
+    private MetricStat getMetricStatFromAgg(ValuesSourceAggregationBuilder<?> agg) {
+        String name = agg.getName();
+        if (name.contains("sum")) return MetricStat.SUM;
+        if (name.contains("max")) return MetricStat.MAX;
+        if (name.contains("min")) return MetricStat.MIN;
+        if (name.contains("count")) return MetricStat.VALUE_COUNT;
+        throw new IllegalArgumentException("Unknown metric aggregation: " + name);
     }
 }

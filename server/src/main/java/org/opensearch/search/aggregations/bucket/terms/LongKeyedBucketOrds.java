@@ -174,6 +174,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
         @Override
         public long bucketsInOrd(long owningBucketOrd) {
+            //System.out.println("debugging -- owningBucketOrd = " + owningBucketOrd);
             assert owningBucketOrd == 0;
             return ords.size();
         }
@@ -190,6 +191,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
         @Override
         public BucketOrdsEnum ordsEnum(long owningBucketOrd) {
+            //System.out.println("debugging -- owningBucketOrd =ordsEnum " + owningBucketOrd);
             assert owningBucketOrd == 0;
             return new BucketOrdsEnum() {
                 private long ord = -1;

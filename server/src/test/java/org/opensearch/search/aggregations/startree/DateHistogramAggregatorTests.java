@@ -234,6 +234,7 @@ public class DateHistogramAggregatorTests extends DateHistogramAggregatorTestCas
         CompositeIndexFieldInfo starTree,
         LinkedHashMap<Dimension, MappedFieldType> supportedDimensions
     ) throws IOException {
+
         InternalDateHistogram starTreeAggregation = searchAndReduceStarTree(
             createIndexSettings(),
             indexSearcher,
@@ -267,6 +268,7 @@ public class DateHistogramAggregatorTests extends DateHistogramAggregatorTestCas
             TIMESTAMP_FIELD_TYPE,
             NUMBER_FIELD_TYPE
         );
+        System.out.println(defaultAggregation + "    " + starTreeAggregation);
 
         assertEquals(defaultAggregation.getBuckets().size(), starTreeAggregation.getBuckets().size());
         assertEquals(defaultAggregation.getBuckets(), starTreeAggregation.getBuckets());
