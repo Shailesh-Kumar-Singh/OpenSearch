@@ -22,16 +22,16 @@ import org.opensearch.index.compositeindex.datacube.startree.utils.StarTreeUtils
 import org.opensearch.index.compositeindex.datacube.startree.utils.iterator.SortedNumericStarTreeValuesIterator;
 import org.opensearch.index.mapper.DocCountFieldMapper;
 import org.opensearch.index.query.QueryShardContext;
+import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.StarTreeBucketCollector;
 import org.opensearch.search.aggregations.support.ValuesSource;
+import org.opensearch.search.aggregations.support.ValuesSourceAggregationBuilder;
 import org.opensearch.search.internal.SearchContext;
 import org.opensearch.search.startree.filter.DimensionFilter;
 import org.opensearch.search.startree.filter.StarTreeFilter;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -222,8 +222,28 @@ public class StarTreeQueryHelper {
         // Don't add groupBy when already present in base filter.
         if (!dimensionFilterMap.containsKey(dimensionToMerge)) {
             dimensionFilterMap.put(dimensionToMerge, dimensionFiltersToMerge);
+//            dimensionFilterMap.put("status", dimensionFiltersToMerge);
+//            dimensionFilterMap.put("size", dimensionFiltersToMerge);
         }
         return new StarTreeFilter(dimensionFilterMap);
     }
+
+    public static StarTreeFilter mergeDimensionFilterIfNotExistsTemp(
+        StarTreeFilter baseStarTreeFilter,
+        List<String> dimensionToMerge,
+        List<DimensionFilter> dimensionFiltersToMerge
+    ) {
+        Map<String, List<DimensionFilter>> dimensionFilterMap = new HashMap<>(baseStarTreeFilter.getDimensions().size());
+        for (String baseDimension : baseStarTreeFilter.getDimensions()) {
+            dimensionFilterMap.put(baseDimension, baseStarTreeFilter.getFiltersForDimension(baseDimension));
+        }
+
+        for(String dimension : dimensionToMerge) {
+            dimensionFilterMap.putIfAbsent(dimension,dimensionFiltersToMerge);
+        }
+        return new StarTreeFilter(dimensionFilterMap);
+    }
+
+
 
 }

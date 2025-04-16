@@ -574,6 +574,7 @@ public abstract class InternalAggregationTestCase<T extends InternalAggregation>
     }
 
     private static void assertMultiBucketConsumer(int innerBucketCount, MultiBucketConsumer bucketConsumer) {
+        System.out.println("BUCKET COUNT " + bucketConsumer.getCount() + " " + innerBucketCount);
         assertThat(bucketConsumer.getCount(), equalTo(innerBucketCount));
     }
 }

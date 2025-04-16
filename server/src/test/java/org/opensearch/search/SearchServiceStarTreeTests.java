@@ -288,7 +288,6 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
         String KEYWORD_FIELD = "clientip";
         String NUMERIC_FIELD = "size";
 
-        // List to store base aggregation builders without subAggregations
         List<Supplier<ValuesSourceAggregationBuilder<?>>> aggregationSuppliers = List.of(
             () -> terms("term").field(KEYWORD_FIELD),
             () -> terms("term").field(NUMERIC_FIELD),
@@ -303,6 +302,7 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
             count("_count").field(FIELD_NAME),
         };
 
+        // 3-LEVELS [BUCKET -> BUCKET -> METRIC]
         for (Supplier<ValuesSourceAggregationBuilder<?>> firstSupplier : aggregationSuppliers) {
             for (Supplier<ValuesSourceAggregationBuilder<?>> secondSupplier : aggregationSuppliers) {
                 for (ValuesSourceAggregationBuilder<?> metricAgg : aggBuilders) {
@@ -340,7 +340,7 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
             }
         }
 
-
+        // 4-LEVELS [BUCKET -> BUCKET -> BUCKET -> METRIC]
         for (Supplier<ValuesSourceAggregationBuilder<?>> firstSupplier : aggregationSuppliers) {
             for (Supplier<ValuesSourceAggregationBuilder<?>> secondSupplier : aggregationSuppliers) {
                 for (Supplier<ValuesSourceAggregationBuilder<?>> thirdSupplier : aggregationSuppliers) {
@@ -1063,7 +1063,6 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
         String TIMESTAMP_FIELD = "timestamp";
         String KEYWORD_FIELD = "clientip";
         String NUMERIC_FIELD = "size";
-        System.out.println(index);
 
         return switch (index) {
             case 0 -> new OrdinalDimension(KEYWORD_FIELD);
@@ -1079,9 +1078,9 @@ public class SearchServiceStarTreeTests extends OpenSearchSingleNodeTestCase {
     private MetricStat getMetricStatFromAgg(ValuesSourceAggregationBuilder<?> agg) {
         String name = agg.getName();
         if (name.contains("sum")) return MetricStat.SUM;
-        if (name.contains("max")) return MetricStat.MAX;
-        if (name.contains("min")) return MetricStat.MIN;
-        if (name.contains("count")) return MetricStat.VALUE_COUNT;
+        else if (name.contains("max")) return MetricStat.MAX;
+        else if (name.contains("min")) return MetricStat.MIN;
+        else if (name.contains("count")) return MetricStat.VALUE_COUNT;
         throw new IllegalArgumentException("Unknown metric aggregation: " + name);
     }
 }

@@ -33,6 +33,7 @@ import org.opensearch.common.lucene.Lucene;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.index.IndexSettings;
 import org.opensearch.index.codec.composite.CompositeIndexFieldInfo;
 import org.opensearch.index.codec.composite.CompositeIndexReader;
 import org.opensearch.index.codec.composite.composite101.Composite101Codec;
@@ -153,9 +154,9 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                 val = random.nextInt(100); // NumericUtils.doubleToSortableLong(random.nextInt(100) + 0.5f);
                 doc.add(new SortedNumericDocValuesField(SIZE, val));
             }
-//            date = random.nextInt(180) * 24 * 60 * 60 * 1000L; // Random date within 180 days
-//            doc.add(new SortedNumericDocValuesField(TIMESTAMP_FIELD, date));
-//            doc.add(new LongPoint(TIMESTAMP_FIELD, date));
+            date = random.nextInt(180) * 24 * 60 * 60 * 1000L; // Random date within 180 days
+            doc.add(new SortedNumericDocValuesField(TIMESTAMP_FIELD, date));
+            doc.add(new LongPoint(TIMESTAMP_FIELD, date));
             iw.addDocument(doc);
             docs.add(doc);
         }
@@ -187,9 +188,20 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
 
         Query query = new MatchAllDocsQuery();
         QueryBuilder queryBuilder = null;
-        TermsAggregationBuilder termsAggregationBuilder1 = terms("terms_agg").field(SIZE).subAggregation(sum("_sum").field(STATUS));
-        TermsAggregationBuilder termsAggregationBuilder = terms("terms_agg").field(STATUS).subAggregation(termsAggregationBuilder1);
-        testCase(indexSearcher, query, queryBuilder, termsAggregationBuilder, starTree, supportedDimensions);
+
+        // DATE_HISTO INSIDE RANGE
+        DateHistogramAggregationBuilder dateHistogramAggregationBuilder =  dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY).subAggregation( sum("_sum").field(STATUS));
+        RangeAggregationBuilder rb1 = range("range_agg").field(STATUS).addRange(10, 30).addRange(30, 50).subAggregation(dateHistogramAggregationBuilder);
+//        testCase(indexSearcher, query, queryBuilder, rb1, starTree, supportedDimensions);
+
+
+
+        // RANGE INSIDE DATE_HISTO
+        RangeAggregationBuilder rb = range("range_agg").field(STATUS).addRange(10, 30).addRange(30, 50).subAggregation( sum("_sum").field(STATUS));
+        DateHistogramAggregationBuilder db = dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY).subAggregation(rb);
+        System.out.println(docs);
+        System.out.println(db);
+        testCase(indexSearcher, query, queryBuilder, db, starTree, supportedDimensions);
 
         ValuesSourceAggregationBuilder[] aggBuilders = {
                 sum("_sum").field(STATUS),
@@ -201,92 +213,91 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
         List<Supplier<ValuesSourceAggregationBuilder<?>>> aggregationSuppliers = List.of(
                 () -> terms("term_status").field(STATUS),
                 () -> terms("term_size").field(SIZE),
-                () -> range("range_agg").field(STATUS).addRange(10, 30).addRange(30, 50)
-//                () -> dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY)
-        );
+                () -> range("range_agg").field(STATUS).addRange(10, 30).addRange(30, 50),
+                () -> dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY));
+
+//                () -> dateHistogram("by_day").field(TIMESTAMP_FIELD).calendarInterval(DateHistogramInterval.DAY));
 
         // 3-LEVELS [BUCKET -> BUCKET -> METRIC]
-        int i = 0;
-        for (ValuesSourceAggregationBuilder aggregationBuilder : aggBuilders) {
-            System.out.println("metric AGGS LOOP " + i++);
-            query = new MatchAllDocsQuery();
-            queryBuilder = null;
-            for (Supplier<ValuesSourceAggregationBuilder<?>> outerSupplier : aggregationSuppliers) {
-                for (Supplier<ValuesSourceAggregationBuilder<?>> innerSupplier : aggregationSuppliers) {
-                    if(outerSupplier == innerSupplier) {continue;}
-
-                    ValuesSourceAggregationBuilder<?> inner = innerSupplier.get().subAggregation(aggregationBuilder);
-                    ValuesSourceAggregationBuilder<?> outer = outerSupplier.get().subAggregation(inner);
-                    System.out.println("this?" + inner);
-                    System.out.println("this!!" + outer);
-                    System.out.println(outer);
-                    System.out.println(docs);
-                    testCase(indexSearcher, query, queryBuilder, outer, starTree, supportedDimensions);
-
-                    // Numeric-terms query with numeric terms aggregation
-                    for (int cases = 0; cases < 100; cases++) {
-                        System.out.println("case : " + cases);
-                        String queryField;
-                        long queryValue;
-                        if (false) {
-                            queryField = STATUS; // terms + terms fails
-                            queryValue = random.nextInt(10);
-                        } else {
-                            queryField = SIZE; // range + range fails
-                            queryValue = random.nextInt(10);
-                        }
-                        query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
-                        queryBuilder = new TermQueryBuilder(queryField, queryValue);
-                        System.out.println("query val" + queryValue);
-                        System.out.println(query);
-//                        System.out.println(statusSet.contains(queryValue));
-//                        System.out.println(outer);
-                        System.out.println(docs);
-                        System.out.println(outer);
-                        testCase(indexSearcher, query, queryBuilder, outer, starTree, supportedDimensions);
-                    }
-
-                }
-            }
-        }
-
-
-        // 4-LEVELS [BUCKET -> BUCKET -> BUCKET -> METRIC]
-        for (ValuesSourceAggregationBuilder aggregationBuilder : aggBuilders) {
-            query = new MatchAllDocsQuery();
-            queryBuilder = null;
-            for (Supplier<ValuesSourceAggregationBuilder<?>> outermostSupplier : aggregationSuppliers) {
-                for (Supplier<ValuesSourceAggregationBuilder<?>> middleSupplier : aggregationSuppliers) {
-                    for (Supplier<ValuesSourceAggregationBuilder<?>> innerSupplier : aggregationSuppliers) {
-
-                        ValuesSourceAggregationBuilder<?> innermost = innerSupplier.get().subAggregation(aggregationBuilder);
-                        ValuesSourceAggregationBuilder<?> middle = middleSupplier.get().subAggregation(innermost);
-                        ValuesSourceAggregationBuilder<?> outermost = outermostSupplier.get().subAggregation(middle);
-
-                        testCase(indexSearcher, query, queryBuilder, outermost, starTree, supportedDimensions);
-
-                        // Numeric-terms query with numeric terms aggregation
-                        for (int cases = 0; cases < 10; cases++) {
-                            System.out.println("case 4 levels: " + cases);
-                            String queryField;
-                            long queryValue;
-                            if (true) {
-                                queryField = STATUS;
-                                queryValue = random.nextInt(10);
-                            } else {
-                                queryField = SIZE;
-                                queryValue = random.nextInt(10);
-                            }
-                            query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
-                            queryBuilder = new TermQueryBuilder(queryField, queryValue);
-                            System.out.println(docs);
-                            testCase(indexSearcher, query, queryBuilder, outermost, starTree, supportedDimensions);
-                        }
-
-                    }
-                }
-            }
-        }
+//        int i = 0;
+//        for (ValuesSourceAggregationBuilder aggregationBuilder : aggBuilders) {
+//            System.out.println("metric AGGS LOOP " + i++);
+//            query = new MatchAllDocsQuery();
+//            queryBuilder = null;
+//            for (Supplier<ValuesSourceAggregationBuilder<?>> outerSupplier : aggregationSuppliers) {
+//                for (Supplier<ValuesSourceAggregationBuilder<?>> innerSupplier : aggregationSuppliers) {
+//
+//                    ValuesSourceAggregationBuilder<?> inner = innerSupplier.get().subAggregation(aggregationBuilder);
+//                    ValuesSourceAggregationBuilder<?> outer = outerSupplier.get().subAggregation(inner);
+////                    System.out.println(outer);
+////                    System.out.println(docs);
+//                    System.out.println("QUERY: " + outer);
+//                    testCase(indexSearcher, query, queryBuilder, outer, starTree, supportedDimensions);
+//
+//                    // Numeric-terms query with numeric terms aggregation
+//                    for (int cases = 0; cases < 10; cases++) {
+//                        System.out.println("case : " + cases);
+//                        String queryField;
+//                        long queryValue;
+//                        if (false) {
+//                            queryField = STATUS; // terms + terms fails
+//                            queryValue = random.nextInt(10);
+//                        } else {
+//                            queryField = SIZE; // range + range fails
+//                            queryValue = random.nextInt(10);
+//                        }
+//                        query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
+//                        queryBuilder = new TermQueryBuilder(queryField, queryValue);
+//                        System.out.println("query val" + queryValue);
+//                        System.out.println("query field" + queryField);
+////                        System.out.println(query);
+//////                        System.out.println(outer);
+//                        System.out.println(docs);
+//                        System.out.println("query: " + outer);
+//                        testCase(indexSearcher, query, queryBuilder, outer, starTree, supportedDimensions);
+//                    }
+//
+//                }
+//            }
+//        }
+////
+////
+//        // 4-LEVELS [BUCKET -> BUCKET -> BUCKET -> METRIC]
+//        for (ValuesSourceAggregationBuilder aggregationBuilder : aggBuilders) {
+//            query = new MatchAllDocsQuery();
+//            queryBuilder = null;
+//            for (Supplier<ValuesSourceAggregationBuilder<?>> outermostSupplier : aggregationSuppliers) {
+//                for (Supplier<ValuesSourceAggregationBuilder<?>> middleSupplier : aggregationSuppliers) {
+//                    for (Supplier<ValuesSourceAggregationBuilder<?>> innerSupplier : aggregationSuppliers) {
+//
+//                        ValuesSourceAggregationBuilder<?> innermost = innerSupplier.get().subAggregation(aggregationBuilder);
+//                        ValuesSourceAggregationBuilder<?> middle = middleSupplier.get().subAggregation(innermost);
+//                        ValuesSourceAggregationBuilder<?> outermost = outermostSupplier.get().subAggregation(middle);
+//
+//                        testCase(indexSearcher, query, queryBuilder, outermost, starTree, supportedDimensions);
+//
+//                        // Numeric-terms query with numeric terms aggregation
+//                        for (int cases = 0; cases < 10; cases++) {
+////                            System.out.println("case 4 levels: " + cases);
+//                            String queryField;
+//                            long queryValue;
+//                            if (true) {
+//                                queryField = STATUS;
+//                                queryValue = random.nextInt(10);
+//                            } else {
+//                                queryField = SIZE;
+//                                queryValue = random.nextInt(10);
+//                            }
+//                            query = SortedNumericDocValuesField.newSlowExactQuery(queryField, queryValue);
+//                            queryBuilder = new TermQueryBuilder(queryField, queryValue);
+////                            System.out.println(docs);
+//                            testCase(indexSearcher, query, queryBuilder, outermost, starTree, supportedDimensions);
+//                        }
+//
+//                    }
+//                }
+//            }
+//        }
 
         ir.close();
         directory.close();
@@ -301,23 +312,6 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
             LinkedHashMap<Dimension, MappedFieldType> supportedDimensions
     ) throws IOException {
         if (aggregationBuilder instanceof TermsAggregationBuilder) {
-            InternalTerms starTreeAggregation = searchAndReduceStarTree(
-                    createIndexSettings(),
-                    indexSearcher,
-                    query,
-                    queryBuilder,
-                    aggregationBuilder,
-                    starTree,
-                    supportedDimensions,
-                    null,
-                    DEFAULT_MAX_BUCKETS,
-                    false,
-                    null,
-                    true,
-                    STATUS_FIELD_TYPE,
-                    SIZE_FIELD_NAME
-            );
-
             InternalTerms defaultAggregation = searchAndReduceStarTree(
                     createIndexSettings(),
                     indexSearcher,
@@ -332,9 +326,27 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                     null,
                     false,
                     STATUS_FIELD_TYPE,
-                    SIZE_FIELD_NAME
+                    SIZE_FIELD_NAME,
+                TIMESTAMP_FIELD_TYPE
             );
-            System.out.println(defaultAggregation + "  debugging " + starTreeAggregation);
+            InternalTerms starTreeAggregation = searchAndReduceStarTree(
+                    createIndexSettings(),
+                    indexSearcher,
+                    query,
+                    queryBuilder,
+                    aggregationBuilder,
+                    starTree,
+                    supportedDimensions,
+                    null,
+                    DEFAULT_MAX_BUCKETS,
+                    false,
+                    null,
+                    true,
+                    STATUS_FIELD_TYPE,
+                    SIZE_FIELD_NAME,
+                   TIMESTAMP_FIELD_TYPE
+            );
+            System.out.println(defaultAggregation + "  debugging in terms " + starTreeAggregation);
             assertEquals(defaultAggregation.getBuckets().size(), starTreeAggregation.getBuckets().size());
             assertEquals(defaultAggregation.getBuckets(), starTreeAggregation.getBuckets());
         } else if (aggregationBuilder instanceof DateHistogramAggregationBuilder) {
@@ -352,8 +364,9 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                     false,
                     null,
                     false,
+                    STATUS_FIELD_TYPE,
                     TIMESTAMP_FIELD_TYPE,
-                    STATUS_FIELD_TYPE
+                    SIZE_FIELD_NAME
             );
             InternalDateHistogram starTreeAggregation = searchAndReduceStarTree(
                     createIndexSettings(),
@@ -368,9 +381,11 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                     false,
                     null,
                     true,
+                    STATUS_FIELD_TYPE,
                     TIMESTAMP_FIELD_TYPE,
-                    STATUS_FIELD_TYPE
+                    SIZE_FIELD_NAME
             );
+            System.out.println(defaultAggregation + " debugging in date_histo " + starTreeAggregation);
 
 
             assertEquals(defaultAggregation.getBuckets().size(), starTreeAggregation.getBuckets().size());
@@ -378,6 +393,19 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
 
         } else if (aggregationBuilder instanceof RangeAggregationBuilder) {
             //System.out.println("DEBUG NEW" + aggregationBuilder);
+//            InternalRange defaultAggregation1 = searchAndReduce(
+//                createIndexSettings(),
+//                indexSearcher,
+//                query,
+//                aggregationBuilder,
+//                DEFAULT_MAX_BUCKETS,
+//                false,
+//                false,
+//                STATUS_FIELD_TYPE,
+//                SIZE_FIELD_NAME,
+//                TIMESTAMP_FIELD_TYPE
+//            );
+
             InternalRange defaultAggregation = searchAndReduceStarTree(
                     createIndexSettings(),
                     indexSearcher,
@@ -392,7 +420,8 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                     null,
                     false,
                     STATUS_FIELD_TYPE,
-                    SIZE_FIELD_NAME
+                    SIZE_FIELD_NAME,
+                    TIMESTAMP_FIELD_TYPE
             );
 
             InternalRange starTreeAggregation = searchAndReduceStarTree(
@@ -409,11 +438,12 @@ public class StarTreeNestedAggregatorTests extends DateHistogramAggregatorTestCa
                     null,
                     true,
                     STATUS_FIELD_TYPE,
-                    SIZE_FIELD_NAME
+                    SIZE_FIELD_NAME,
+                    TIMESTAMP_FIELD_TYPE
             );
 
 
-//            System.out.println(defaultAggregation + "  range shailesh  " + starTreeAggregation);
+//            System.out.println(defaultAggregation + "  debugging in range  " + starTreeAggregation);
             //if(defaultAggregation.ge)
             assertEquals(defaultAggregation.getBuckets().size(), starTreeAggregation.getBuckets().size());
             assertEquals(defaultAggregation.getBuckets(), starTreeAggregation.getBuckets());

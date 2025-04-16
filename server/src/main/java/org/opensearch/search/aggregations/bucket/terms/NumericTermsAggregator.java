@@ -69,13 +69,11 @@ import org.opensearch.search.internal.SearchContext;
 import org.opensearch.search.startree.StarTreeQueryHelper;
 import org.opensearch.search.startree.StarTreeTraversalUtil;
 import org.opensearch.search.startree.filter.DimensionFilter;
+import org.opensearch.search.startree.filter.StarTreeFilter;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -136,10 +134,10 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
             public void collect(int doc, long owningBucketOrd) throws IOException {
                 if (values.advanceExact(doc)) {
                     int valuesCount = values.docValueCount();
-
                     long previous = Long.MAX_VALUE;
                     for (int i = 0; i < valuesCount; ++i) {
                         long val = values.nextValue();
+//                        System.out.println("collecting value : " + val + " ---  field name : " + fieldName);
                         if (previous != val || i == 0) {
                             if ((longFilter == null) || (longFilter.accept(val))) {
                                 long bucketOrdinal = bucketOrds.add(owningBucketOrd, val);
@@ -169,6 +167,20 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
         return false;
     }
 
+    @Override
+    public List<String> setDimensionFilters() {
+        List<String> dimensionsToMerge = new ArrayList<>();
+        dimensionsToMerge.add(fieldName);
+        // Recursively update children
+        for (Aggregator subAgg : subAggregators) {
+            if (subAgg instanceof StarTreePreComputeCollector) {
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).setDimensionFilters();
+                dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
+            }
+        }
+        return dimensionsToMerge;
+    }
+
     public StarTreeBucketCollector getStarTreeBucketCollector(
         LeafReaderContext ctx,
         CompositeIndexFieldInfo starTree,
@@ -179,14 +191,18 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
         SortedNumericStarTreeValuesIterator valuesIterator = (SortedNumericStarTreeValuesIterator) starTreeValues
             .getDimensionValuesIterator(fieldName);
         SortedNumericStarTreeValuesIterator docCountsIterator = StarTreeQueryHelper.getDocCountsIterator(starTreeValues, starTree);
-
+        List<String> dimensionsToMerge = setDimensionFilters();
+        // Term query - status = 5
+        // Terms aggs ( size ) - [ Parent == null ] - BaseQueryStarTreeFilter[TermFilter(Status = 5)] , now this code adds [MatchAllFilter[size]]
+        //      Terms aggs ( status ) [[MatchAllFilter[status]]
+        System.out.println(starTreeValues.getDimensionValuesIterator().keySet());
         return new StarTreeBucketCollector(
             starTreeValues,
             StarTreeTraversalUtil.getStarTreeResult(
                 starTreeValues,
-                StarTreeQueryHelper.mergeDimensionFilterIfNotExists(
+                StarTreeQueryHelper.mergeDimensionFilterIfNotExistsTemp(
                     context.getQueryShardContext().getStarTreeQueryContext().getBaseQueryStarTreeFilter(),
-                    fieldName,
+                    dimensionsToMerge,
                     List.of(DimensionFilter.MATCH_ALL_DEFAULT)
                 ),
                 context
@@ -202,9 +218,11 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
             @Override
             public void collectStarTreeEntry(int starTreeEntry, long owningBucketOrd) throws IOException {
                 if (valuesIterator.advanceExact(starTreeEntry) == false) {
+                    System.out.println("exiting");
                     return;
                 }
                 long dimensionValue = valuesIterator.nextValue();
+//                System.out.println("Collecting star tree value for :" + fieldName +  "  dimensionValue : " + dimensionValue );
                 // Only numeric & floating points are supported as of now in star-tree
                 // TODO: Add support for isBigInteger() when it gets supported in star-tree
                 if (valuesSource.isFloatingPoint()) {
@@ -217,6 +235,7 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
                 for (int i = 0, count = valuesIterator.entryValueCount(); i < count; i++) {
 
                     if (docCountsIterator.advanceExact(starTreeEntry)) {
+                        System.out.println("Going in");
                         long metricValue = docCountsIterator.nextValue();
                         long bucketOrd = bucketOrds.add(owningBucketOrd, dimensionValue);
                         collectStarTreeBucket(this, metricValue, bucketOrd, starTreeEntry);
@@ -300,7 +319,7 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
             }
 
             buildSubAggs(topBucketsPerOrd);
-
+//            System.out.println("Ords length : " + owningBucketOrds.length);
             InternalAggregation[] result = new InternalAggregation[owningBucketOrds.length];
             for (int ordIdx = 0; ordIdx < owningBucketOrds.length; ordIdx++) {
                 result[ordIdx] = buildResult(owningBucketOrds[ordIdx], otherDocCounts[ordIdx], topBucketsPerOrd[ordIdx]);
@@ -483,6 +502,10 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
                 Arrays.sort(topBuckets, reduceOrder.comparator());
             } else {
                 reduceOrder = order;
+            }
+//            System.out.println("Top buckets : ");
+            for(LongTerms.Bucket topBucket : topBuckets) {
+                System.out.println(topBucket.term);
             }
             return new LongTerms(
                 name,

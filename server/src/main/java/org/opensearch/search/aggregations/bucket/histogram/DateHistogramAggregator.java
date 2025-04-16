@@ -69,10 +69,7 @@ import org.opensearch.search.startree.StarTreeTraversalUtil;
 import org.opensearch.search.startree.filter.DimensionFilter;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -278,6 +275,20 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
     }
 
     @Override
+    public List<String> setDimensionFilters() {
+        List<String> dimensionsToMerge = new ArrayList<>();
+        dimensionsToMerge.add(starTreeDateDimension);
+        // Recursively update children
+        for (Aggregator subAgg : subAggregators) {
+            if (subAgg instanceof StarTreePreComputeCollector) {
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).setDimensionFilters();
+                dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
+            }
+        }
+        return dimensionsToMerge;
+    }
+
+    @Override
     public StarTreeBucketCollector getStarTreeBucketCollector(
         LeafReaderContext ctx,
         CompositeIndexFieldInfo starTree,
@@ -288,14 +299,16 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         SortedNumericStarTreeValuesIterator valuesIterator = (SortedNumericStarTreeValuesIterator) starTreeValues
             .getDimensionValuesIterator(starTreeDateDimension);
         SortedNumericStarTreeValuesIterator docCountsIterator = StarTreeQueryHelper.getDocCountsIterator(starTreeValues, starTree);
+        List<String> dimensionsToMerge = setDimensionFilters();
+
 
         return new StarTreeBucketCollector(
             starTreeValues,
             StarTreeTraversalUtil.getStarTreeResult(
                 starTreeValues,
-                StarTreeQueryHelper.mergeDimensionFilterIfNotExists(
+                StarTreeQueryHelper.mergeDimensionFilterIfNotExistsTemp(
                     context.getQueryShardContext().getStarTreeQueryContext().getBaseQueryStarTreeFilter(),
-                    starTreeDateDimension,
+                    dimensionsToMerge,
                     List.of(DimensionFilter.MATCH_ALL_DEFAULT)
                 ),
                 context

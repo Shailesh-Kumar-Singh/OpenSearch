@@ -273,6 +273,12 @@ public class StarTreeValues implements CompositeIndexValues {
         throw new IllegalArgumentException("dimension [" + dimension + "] does not exist in the segment.");
     }
 
+    public Map<String, Supplier<StarTreeValuesIterator>> getDimensionValuesIterator() {
+            return dimensionValuesIteratorMap;
+    }
+
+
+
     /**
      * Returns the StarTreeValues iterator for the specified fully qualified metric name.
      *

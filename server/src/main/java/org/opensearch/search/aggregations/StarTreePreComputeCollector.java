@@ -10,8 +10,10 @@ package org.opensearch.search.aggregations;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.opensearch.index.codec.composite.CompositeIndexFieldInfo;
+import org.opensearch.search.startree.filter.DimensionFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * This interface is used to pre-compute the star tree bucket collector for each segment/leaf.
@@ -29,4 +31,8 @@ public interface StarTreePreComputeCollector {
         CompositeIndexFieldInfo starTree,
         StarTreeBucketCollector parentCollector
     ) throws IOException;
+
+    default List<String> setDimensionFilters() {
+        return null;
+    }
 }
