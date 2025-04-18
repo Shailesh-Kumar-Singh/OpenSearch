@@ -159,6 +159,7 @@ public abstract class InternalMultiBucketAggregation<
                 size += countInnerBucket(bucketAgg);
             }
         }
+//        System.out.println();
         return size;
     }
 

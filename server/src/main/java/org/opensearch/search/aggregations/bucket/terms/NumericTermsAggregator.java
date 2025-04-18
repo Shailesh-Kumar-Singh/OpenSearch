@@ -69,7 +69,6 @@ import org.opensearch.search.internal.SearchContext;
 import org.opensearch.search.startree.StarTreeQueryHelper;
 import org.opensearch.search.startree.StarTreeTraversalUtil;
 import org.opensearch.search.startree.filter.DimensionFilter;
-import org.opensearch.search.startree.filter.StarTreeFilter;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -168,13 +167,13 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
     }
 
     @Override
-    public List<String> setDimensionFilters() {
+    public List<String> getDimensionFilters() {
         List<String> dimensionsToMerge = new ArrayList<>();
         dimensionsToMerge.add(fieldName);
         // Recursively update children
         for (Aggregator subAgg : subAggregators) {
             if (subAgg instanceof StarTreePreComputeCollector) {
-                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).setDimensionFilters();
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).getDimensionFilters();
                 dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
             }
         }
@@ -191,10 +190,7 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
         SortedNumericStarTreeValuesIterator valuesIterator = (SortedNumericStarTreeValuesIterator) starTreeValues
             .getDimensionValuesIterator(fieldName);
         SortedNumericStarTreeValuesIterator docCountsIterator = StarTreeQueryHelper.getDocCountsIterator(starTreeValues, starTree);
-        List<String> dimensionsToMerge = setDimensionFilters();
-        // Term query - status = 5
-        // Terms aggs ( size ) - [ Parent == null ] - BaseQueryStarTreeFilter[TermFilter(Status = 5)] , now this code adds [MatchAllFilter[size]]
-        //      Terms aggs ( status ) [[MatchAllFilter[status]]
+        List<String> dimensionsToMerge = getDimensionFilters();
         System.out.println(starTreeValues.getDimensionValuesIterator().keySet());
         return new StarTreeBucketCollector(
             starTreeValues,
@@ -218,7 +214,6 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
             @Override
             public void collectStarTreeEntry(int starTreeEntry, long owningBucketOrd) throws IOException {
                 if (valuesIterator.advanceExact(starTreeEntry) == false) {
-                    System.out.println("exiting");
                     return;
                 }
                 long dimensionValue = valuesIterator.nextValue();
@@ -235,7 +230,6 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
                 for (int i = 0, count = valuesIterator.entryValueCount(); i < count; i++) {
 
                     if (docCountsIterator.advanceExact(starTreeEntry)) {
-                        System.out.println("Going in");
                         long metricValue = docCountsIterator.nextValue();
                         long bucketOrd = bucketOrds.add(owningBucketOrd, dimensionValue);
                         collectStarTreeBucket(this, metricValue, bucketOrd, starTreeEntry);
@@ -505,7 +499,7 @@ public class NumericTermsAggregator extends TermsAggregator implements StarTreeP
             }
 //            System.out.println("Top buckets : ");
             for(LongTerms.Bucket topBucket : topBuckets) {
-                System.out.println(topBucket.term);
+//                System.out.println(topBucket.term);
             }
             return new LongTerms(
                 name,

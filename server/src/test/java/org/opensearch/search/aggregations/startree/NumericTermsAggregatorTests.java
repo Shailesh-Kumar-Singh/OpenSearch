@@ -144,7 +144,7 @@ public class NumericTermsAggregatorTests extends AggregatorTestCase {
         Query query = new MatchAllDocsQuery();
         QueryBuilder queryBuilder = null;
         TermsAggregationBuilder termsAggregationBuilder = terms("terms_agg").field(STATUS);
-//        testCase(indexSearcher, query, queryBuilder, termsAggregationBuilder, starTree, supportedDimensions);
+        testCase(indexSearcher, query, queryBuilder, termsAggregationBuilder, starTree, supportedDimensions);
 
         ValuesSourceAggregationBuilder[] aggBuilders = {
             sum("_sum").field(SIZE),
@@ -238,8 +238,6 @@ public class NumericTermsAggregatorTests extends AggregatorTestCase {
             STATUS_FIELD_TYPE,
             SIZE_FIELD_NAME
         );
-        System.out.println(defaultAggregation + "  shailesh  " + starTreeAggregation);
-
 
         assertEquals(defaultAggregation.getBuckets().size(), starTreeAggregation.getBuckets().size());
         assertEquals(defaultAggregation.getBuckets(), starTreeAggregation.getBuckets());
@@ -324,7 +322,7 @@ public class NumericTermsAggregatorTests extends AggregatorTestCase {
             b.field("type", "integer");
             b.endObject();
             b.startObject("size");
-            b.field("type", "integer");
+            b.field("type", "float");
             b.endObject();
             b.startObject("rank");
             b.field("type", "integer");

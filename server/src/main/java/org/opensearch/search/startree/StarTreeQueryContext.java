@@ -176,7 +176,6 @@ public class StarTreeQueryContext {
 
             return field != null && supportedMetrics.containsKey(field) && supportedMetrics.get(field).contains(metricStat);
         }
-        System.out.println("shailu?");
         return false;
     }
 

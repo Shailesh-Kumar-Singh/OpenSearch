@@ -79,9 +79,7 @@ import org.opensearch.search.startree.StarTreeTraversalUtil;
 import org.opensearch.search.startree.filter.DimensionFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.LongPredicate;
@@ -103,11 +101,11 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
     private final long valueCount;
     protected final String fieldName;
     private Weight weight;
-    protected final CollectionStrategy collectionStrategy;
+    protected CollectionStrategy collectionStrategy;
     private final SetOnce<SortedSetDocValues> dvs = new SetOnce<>();
     protected int segmentsWithSingleValuedOrds = 0;
     protected int segmentsWithMultiValuedOrds = 0;
-    LongUnaryOperator globalOperator;
+    protected CardinalityUpperBound cardinalityUpperBound;
 
     /**
      * Lookup global ordinals
@@ -248,7 +246,6 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
     protected boolean tryStarTreePrecompute(LeafReaderContext ctx) throws IOException {
         CompositeIndexFieldInfo supportedStarTree = StarTreeQueryHelper.getSupportedStarTree(this.context.getQueryShardContext());
         if (supportedStarTree != null) {
-            globalOperator = valuesSource.globalOrdinalsMapping(ctx);
             StarTreeBucketCollector starTreeBucketCollector = getStarTreeBucketCollector(ctx, supportedStarTree, null);
             StarTreeQueryHelper.preComputeBucketsWithStarTree(starTreeBucketCollector);
             return true;
@@ -332,10 +329,25 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
         });
     }
 
+    @Override
+    public List<String> getDimensionFilters() {
+        List<String> dimensionsToMerge = new ArrayList<>();
+        dimensionsToMerge.add(fieldName);
+        // Recursively update children
+        for (Aggregator subAgg : subAggregators) {
+            if (subAgg instanceof StarTreePreComputeCollector) {
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).getDimensionFilters();
+                dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
+            }
+        }
+        return dimensionsToMerge;
+    }
+
     public StarTreeBucketCollector getStarTreeBucketCollector(
         LeafReaderContext ctx,
         CompositeIndexFieldInfo starTree,
         StarTreeBucketCollector parent
+//        CardinalityUpperBound cardinality
     ) throws IOException {
 //        assert parent == null;
         StarTreeValues starTreeValues = StarTreeQueryHelper.getStarTreeValues(ctx, starTree);
@@ -343,18 +355,27 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
             fieldName
         );
         SortedNumericStarTreeValuesIterator docCountsIterator = StarTreeQueryHelper.getDocCountsIterator(starTreeValues, starTree);
+        List<String> dimensionsToMerge = getDimensionFilters();
+
+        LongUnaryOperator globalOperator = valuesSource.globalOrdinalsMapping(ctx);
+
+
+        collectionStrategy = new RemapSTGlobalOrds(CardinalityUpperBound.MANY);
+        SortedSetDocValues globalOrds = valuesSource.globalOrdinalsValues(ctx);
+        collectionStrategy.globalOrdsReady(globalOrds);
+        Releasables.close();
 
         return new StarTreeBucketCollector(
             starTreeValues,
-            StarTreeTraversalUtil.getStarTreeResult(
+            parent == null ? StarTreeTraversalUtil.getStarTreeResult(
                 starTreeValues,
-                StarTreeQueryHelper.mergeDimensionFilterIfNotExists(
+                StarTreeQueryHelper.mergeDimensionFilterIfNotExistsTemp(
                     context.getQueryShardContext().getStarTreeQueryContext().getBaseQueryStarTreeFilter(),
-                    fieldName,
+                    dimensionsToMerge,
                     List.of(DimensionFilter.MATCH_ALL_DEFAULT)
                 ),
                 context
-            )
+            ) : null
         ) {
             @Override
             public void setSubCollectors() throws IOException {
@@ -374,8 +395,10 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
 
                     if (docCountsIterator.advanceExact(starTreeEntry)) {
                         long metricValue = docCountsIterator.nextValue();
-                        long bucketOrd = collectionStrategy.globalOrdToBucketOrd(0, ord);
-                        collectStarTreeBucket(this, metricValue, bucketOrd, starTreeEntry);
+                        long bucketOrd = collectionStrategy.globalOrdToBucketOrd(owningBucketOrd, ord);
+//                        System.out.println("star tree bucket ord : " + bucketOrd + " , " + ord + " : " + owningBucketOrd);
+                        RemapSTGlobalOrds rangeSTGlobalOrds = (RemapSTGlobalOrds) collectionStrategy;
+                        rangeSTGlobalOrds.collectGlobalOrdST(owningBucketOrd, starTreeEntry, ord , this, metricValue);
                     }
                 }
             }
@@ -679,6 +702,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
 
         @Override
         long globalOrdToBucketOrd(long owningBucketOrd, long globalOrd) {
+            System.out.println("dense");
             assert owningBucketOrd == 0;
             return globalOrd;
         }
@@ -730,6 +754,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
         @Override
         void collectGlobalOrd(long owningBucketOrd, int doc, long globalOrd, LeafBucketCollector sub) throws IOException {
             long bucketOrd = bucketOrds.add(owningBucketOrd, globalOrd);
+//            System.out.println("Inside remap bucket ord" + bucketOrd + ": " + globalOrd + " : owning bucket ord : " + owningBucketOrd);
             if (bucketOrd < 0) {
                 bucketOrd = -1 - bucketOrd;
                 collectExistingBucket(sub, doc, bucketOrd);
@@ -740,6 +765,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
 
         @Override
         long globalOrdToBucketOrd(long owningBucketOrd, long globalOrd) {
+//            System.out.println("remap");
             return bucketOrds.find(owningBucketOrd, globalOrd);
         }
 
@@ -778,6 +804,84 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
             }
         }
 
+        @Override
+        public void close() {
+            bucketOrds.close();
+        }
+    }
+
+    private class RemapSTGlobalOrds extends CollectionStrategy {
+        private final LongKeyedBucketOrds bucketOrds;
+
+        private RemapSTGlobalOrds(CardinalityUpperBound cardinality) {
+            bucketOrds = LongKeyedBucketOrds.build(context.bigArrays(), cardinality);
+        }
+
+        @Override
+        String describe() {
+            return "remap";
+        }
+
+        @Override
+        void collectDebugInfo(BiConsumer<String, Object> add) {
+            add.accept("total_buckets", bucketOrds.size());
+        }
+
+        @Override
+        void globalOrdsReady(SortedSetDocValues globalOrds) {}
+
+        @Override
+        void collectGlobalOrd(long owningBucketOrd, int doc, long globalOrd, LeafBucketCollector sub) throws IOException {
+
+        }
+
+        void collectGlobalOrdST(long owningBucketOrd, int starTreeEntry, long globalOrd, StarTreeBucketCollector collector, long docCount) throws IOException {
+            long bucketOrd = bucketOrds.add(owningBucketOrd, globalOrd);
+//            System.out.println("Inside remap bucket ord" + bucketOrd + ": " + globalOrd + " : owning bucket ord : " + owningBucketOrd);
+            collectStarTreeBucket(collector, docCount , bucketOrd, starTreeEntry);
+        }
+
+        @Override
+        long globalOrdToBucketOrd(long owningBucketOrd, long globalOrd) {
+//            System.out.println("remap");
+            return bucketOrds.find(owningBucketOrd, globalOrd);
+        }
+
+        @Override
+        void forEach(long owningBucketOrd, BucketInfoConsumer consumer) throws IOException {
+            if (bucketCountThresholds.getMinDocCount() == 0) {
+                for (long globalOrd = 0; globalOrd < valueCount; globalOrd++) {
+                    if (false == acceptedGlobalOrdinals.test(globalOrd)) {
+                        continue;
+                    }
+                    /*
+                     * Use `add` instead of `find` here to assign an ordinal
+                     * even if the global ord wasn't found so we can build
+                     * sub-aggregations without trouble even though we haven't
+                     * hit any documents for them. This is wasteful, but
+                     * settings minDocCount == 0 is wasteful in general.....
+                     */
+                    long bucketOrd = bucketOrds.add(owningBucketOrd, globalOrd);
+                    long docCount;
+                    if (bucketOrd < 0) {
+                        bucketOrd = -1 - bucketOrd;
+                        docCount = bucketDocCount(bucketOrd);
+                    } else {
+                        docCount = 0;
+                    }
+                    consumer.accept(globalOrd, bucketOrd, docCount);
+                }
+            } else {
+                LongKeyedBucketOrds.BucketOrdsEnum ordsEnum = bucketOrds.ordsEnum(owningBucketOrd);
+                while (ordsEnum.next()) {
+                    if (false == acceptedGlobalOrdinals.test(ordsEnum.value())) {
+                        continue;
+                    }
+                    consumer.accept(ordsEnum.value(), ordsEnum.ord(), bucketDocCount(ordsEnum.ord()));
+                }
+            }
+        }
+//
         @Override
         public void close() {
             bucketOrds.close();

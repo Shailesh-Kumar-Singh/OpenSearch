@@ -343,6 +343,7 @@ public class RangeAggregator extends BucketsAggregator implements StarTreePreCom
         return new LeafBucketCollectorBase(sub, values) {
             @Override
             public void collect(int doc, long bucket) throws IOException {
+//                System.out.println("on line 346");
                 if (values.advanceExact(doc)) {
                     final int valuesCount = values.docValueCount();
                     for (int i = 0, lo = 0; i < valuesCount; ++i) {
@@ -380,13 +381,13 @@ public class RangeAggregator extends BucketsAggregator implements StarTreePreCom
     }
 
     @Override
-    public List<String> setDimensionFilters() {
+    public List<String> getDimensionFilters() {
         List<String> dimensionsToMerge = new ArrayList<>();
         dimensionsToMerge.add(fieldName);
         // Recursively update children
         for (Aggregator subAgg : subAggregators) {
             if (subAgg instanceof StarTreePreComputeCollector) {
-                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).setDimensionFilters();
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).getDimensionFilters();
                 dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
             }
         }
@@ -401,7 +402,7 @@ public class RangeAggregator extends BucketsAggregator implements StarTreePreCom
     ) throws IOException {
 //        assert parentCollector == null;
         StarTreeValues starTreeValues = StarTreeQueryHelper.getStarTreeValues(ctx, starTree);
-        List<String> dimensionsToMerge = setDimensionFilters();
+        List<String> dimensionsToMerge = getDimensionFilters();
 
         // TODO: Evaluate optimizing StarTree traversal filter with specific ranges instead of MATCH_ALL_DEFAULT
         return new StarTreeBucketCollector(

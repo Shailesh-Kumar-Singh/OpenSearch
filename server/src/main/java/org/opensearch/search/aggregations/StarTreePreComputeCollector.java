@@ -10,7 +10,6 @@ package org.opensearch.search.aggregations;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.opensearch.index.codec.composite.CompositeIndexFieldInfo;
-import org.opensearch.search.startree.filter.DimensionFilter;
 
 import java.io.IOException;
 import java.util.List;
@@ -32,7 +31,7 @@ public interface StarTreePreComputeCollector {
         StarTreeBucketCollector parentCollector
     ) throws IOException;
 
-    default List<String> setDimensionFilters() {
+    default List<String> getDimensionFilters() {
         return null;
     }
 }

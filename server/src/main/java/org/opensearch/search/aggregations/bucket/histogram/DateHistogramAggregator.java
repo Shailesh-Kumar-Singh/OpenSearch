@@ -191,6 +191,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
             StarTreeQueryHelper.preComputeBucketsWithStarTree(starTreeBucketCollector);
             return true;
         }
+//        return false;
         return filterRewriteOptimizationContext.tryOptimize(ctx, this::incrementBucketDocCount, segmentMatchAll(context, ctx));
     }
 
@@ -208,6 +209,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
             return new LeafBucketCollectorBase(sub, values) {
                 @Override
                 public void collect(int doc, long owningBucketOrd) throws IOException {
+//                    System.out.println("on line 212");
                     if (singleton.advanceExact(doc)) {
                         long value = singleton.longValue();
                         collectValue(sub, doc, owningBucketOrd, preparedRounding.round(value));
@@ -224,6 +226,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
                     int valuesCount = values.docValueCount();
                     long previousRounded = Long.MIN_VALUE;
                     for (int i = 0; i < valuesCount; ++i) {
+//                        System.out.println("on line 233");
                         long value = values.nextValue();
                         long rounded = preparedRounding.round(value);
                         assert rounded >= previousRounded;
@@ -275,13 +278,13 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
     }
 
     @Override
-    public List<String> setDimensionFilters() {
+    public List<String> getDimensionFilters() {
         List<String> dimensionsToMerge = new ArrayList<>();
         dimensionsToMerge.add(starTreeDateDimension);
         // Recursively update children
         for (Aggregator subAgg : subAggregators) {
             if (subAgg instanceof StarTreePreComputeCollector) {
-                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).setDimensionFilters();
+                List<String> childDimensionsToMerge = ((StarTreePreComputeCollector) subAgg).getDimensionFilters();
                 dimensionsToMerge.addAll(childDimensionsToMerge != null ? childDimensionsToMerge : Collections.emptyList());
             }
         }
@@ -299,7 +302,7 @@ class DateHistogramAggregator extends BucketsAggregator implements SizedBucketAg
         SortedNumericStarTreeValuesIterator valuesIterator = (SortedNumericStarTreeValuesIterator) starTreeValues
             .getDimensionValuesIterator(starTreeDateDimension);
         SortedNumericStarTreeValuesIterator docCountsIterator = StarTreeQueryHelper.getDocCountsIterator(starTreeValues, starTree);
-        List<String> dimensionsToMerge = setDimensionFilters();
+        List<String> dimensionsToMerge = getDimensionFilters();
 
 
         return new StarTreeBucketCollector(
