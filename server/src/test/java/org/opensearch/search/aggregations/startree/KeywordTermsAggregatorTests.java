@@ -156,7 +156,7 @@ public class KeywordTermsAggregatorTests extends AggregatorTestCase {
         Query query = new MatchAllDocsQuery();
         QueryBuilder queryBuilder = null;
         TermsAggregationBuilder termsAggregationBuilder = terms("terms_agg").field(CLIENTIP)
-            .collectMode(Aggregator.SubAggCollectionMode.BREADTH_FIRST);
+            .collectMode(Aggregator.SubAggCollectionMode.DEPTH_FIRST);
         testCase(indexSearcher, query, queryBuilder, termsAggregationBuilder, starTree, supportedDimensions);
 
         ValuesSourceAggregationBuilder[] aggBuilders = {
@@ -172,7 +172,7 @@ public class KeywordTermsAggregatorTests extends AggregatorTestCase {
 
             termsAggregationBuilder = terms("terms_agg").field(CLIENTIP)
                 .subAggregation(aggregationBuilder)
-                .collectMode(Aggregator.SubAggCollectionMode.BREADTH_FIRST);
+                .collectMode(Aggregator.SubAggCollectionMode.DEPTH_FIRST);
             testCase(indexSearcher, query, queryBuilder, termsAggregationBuilder, starTree, supportedDimensions);
 
             // Numeric-terms query with keyword terms aggregation

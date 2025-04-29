@@ -54,7 +54,8 @@ public class QueryPhaseSearcherWrapper implements QueryPhaseSearcher {
         boolean hasFilterCollector,
         boolean hasTimeout
     ) throws IOException {
-        if (searchContext.shouldUseConcurrentSearch()) {
+        // todo: if (searchContext.shouldUseConcurrentSearch() && searchContext.getQueryShardContext().getStarTreeQueryContext() == null) {
+        if (searchContext.shouldUseConcurrentSearch() && searchContext.getQueryShardContext().getStarTreeQueryContext() == null) {
             return concurrentQueryPhaseSearcher.searchWith(searchContext, searcher, query, collectors, hasFilterCollector, hasTimeout);
         } else {
             return defaultQueryPhaseSearcher.searchWith(searchContext, searcher, query, collectors, hasFilterCollector, hasTimeout);
@@ -68,7 +69,7 @@ public class QueryPhaseSearcherWrapper implements QueryPhaseSearcher {
      */
     @Override
     public AggregationProcessor aggregationProcessor(SearchContext searchContext) {
-        if (searchContext.shouldUseConcurrentSearch()) {
+        if (searchContext.shouldUseConcurrentSearch() && searchContext.getQueryShardContext().getStarTreeQueryContext() == null) {
             return concurrentQueryPhaseSearcher.aggregationProcessor(searchContext);
         } else {
             return defaultQueryPhaseSearcher.aggregationProcessor(searchContext);
