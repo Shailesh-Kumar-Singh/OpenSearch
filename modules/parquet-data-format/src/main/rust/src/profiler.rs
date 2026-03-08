@@ -5,11 +5,11 @@ pub fn profile_sorted_merge() -> Result<(), Box<dyn std::error::Error>> {
     let home_dir = env::var("HOME").unwrap_or_else(|_| "/Users/shaikumm/Downloads".to_string());
 
     let input_files = vec![
-        format!("{}/Downloads/data_file_1.parquet", home_dir),
-        format!("{}/Downloads/data_file_2.parquet", home_dir),
-        format!("{}/Downloads/data_file_3.parquet", home_dir),
-        format!("{}/Downloads/data_file_4.parquet", home_dir),
-        format!("{}/Downloads/data_file_5.parquet", home_dir),
+        format!("{}/Downloads/_parquet_file_generation_25.parquet", home_dir),
+        format!("{}/Downloads/_parquet_file_generation_26.parquet", home_dir),
+        format!("{}/Downloads/_parquet_file_generation_27.parquet", home_dir),
+        format!("{}/Downloads/_parquet_file_generation_28.parquet", home_dir),
+        format!("{}/Downloads/_parquet_file_generation_29.parquet", home_dir),
     ];
 
     let output_file = format!("{}/merged_sorted_output.parquet", home_dir);
@@ -22,7 +22,7 @@ pub fn profile_sorted_merge() -> Result<(), Box<dyn std::error::Error>> {
     crate::parquet_merge_stream1::merge_streaming(
         &input_files,
         &output_file,
-        "timestamp"
+        "EventDate"
     )?;
 
     let duration = start.elapsed();

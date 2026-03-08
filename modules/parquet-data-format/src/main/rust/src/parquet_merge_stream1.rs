@@ -42,10 +42,13 @@ use tokio::runtime::Runtime;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+use crate::rate_limited_writer::RateLimitedWriter;
+
 const ROW_ID_COLUMN_NAME: &str = "___row_id";
 const BATCH_SIZE: usize = 1_00_000;
 const OUTPUT_FLUSH_ROWS: usize = 1_000_000;
 const RAYON_NUM_THREADS: usize = 4;
+const RATE_LIMIT_MB_PER_SEC: f64 = 20.0;
 
 // =============================================================================
 // Process-wide shared Rayon thread pool — lazily initialized, lives forever
@@ -115,15 +118,15 @@ async fn drain_on_error(rx: &mut tokio_mpsc::Receiver<IoCommand>, msg: &str) {
 ///   merge loop:  [encode RG1][encode RG2][encode RG3]
 ///   io task:                 [write RG1 ][write RG2 ][write RG3]
 fn spawn_io_task(
-    writer: SerializedFileWriter<File>,
+    writer: SerializedFileWriter<RateLimitedWriter<File>>,
 ) -> tokio_mpsc::Sender<IoCommand> {
     // Buffer of 2: merge loop can prepare one row group ahead while
     // the IO task is still flushing the previous one.
     let (tx, mut rx) = tokio_mpsc::channel::<IoCommand>(2);
 
     get_io_runtime().spawn(async move {
-        let mut writer: Option<SerializedFileWriter<File>> = Some(writer);
-        let mut in_flight: Option<JoinHandle<MergeResult<SerializedFileWriter<File>>>> =
+        let mut writer: Option<SerializedFileWriter<RateLimitedWriter<File>>> = Some(writer);
+        let mut in_flight: Option<JoinHandle<MergeResult<SerializedFileWriter<RateLimitedWriter<File>>>>> =
             None;
 
         while let Some(cmd) = rx.recv().await {
@@ -1013,8 +1016,10 @@ pub fn merge_streaming_with_config(
         active_count
     );
 
-    // ── Open writer and spawn tokio IO task ─────────────────────────────
+    // ── Open writer with rate-limited IO and spawn tokio IO task ────────
     let output_file = File::create(output_path)?;
+    let throttled_writer = RateLimitedWriter::new(output_file, RATE_LIMIT_MB_PER_SEC)
+        .map_err(|e| MergeError::Io(e))?;
 
     let writer_props = Arc::new(
         WriterProperties::builder()
@@ -1025,7 +1030,7 @@ pub fn merge_streaming_with_config(
     );
 
     let writer =
-        SerializedFileWriter::new(output_file, parquet_root, writer_props.clone())?;
+        SerializedFileWriter::new(throttled_writer, parquet_root, writer_props.clone())?;
 
     let rg_writer_factory =
         ArrowRowGroupWriterFactory::new(&writer, output_schema.clone());
@@ -1054,11 +1059,6 @@ pub fn merge_streaming_with_config(
     let mut next_row_id: i64 = 0;
 
     // ── Flush macro ─────────────────────────────────────────────────────
-    // Uses `io_tx.blocking_send()` — blocks the calling (merge-loop) thread
-    // until the tokio IO task is ready to accept the next command.
-    // With channel buffer of 2 + deferred await inside the IO task, the
-    // merge loop can keep encoding the next row group while the previous
-    // one is still being written to disk.
     macro_rules! flush {
         () => {
             if !output_chunks.is_empty() {

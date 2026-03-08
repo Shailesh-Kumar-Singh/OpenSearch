@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::panic::AssertUnwindSafe;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
-use arrow::array::{Int64Array, ArrayRef};
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
 use parquet::basic::Compression;
@@ -17,6 +16,9 @@ use arrow::array::{Int64Array, ArrayRef, TimestampMillisecondArray};
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use crate::rate_limited_writer::RateLimitedWriter;
+use crate::NativeSettings;
+
+
 
 use crate::{log_info, log_error, SETTINGS_STORE};
 use crate::writer_properties_builder::WriterPropertiesBuilder;
@@ -158,7 +160,7 @@ pub fn process_parquet_files(input_files: &[String], output_path: &str, sort_col
     log_info!("Schema read successfully: {:?}", schema);
 
     // Create writer
-    let mut writer = create_writer(output_path, schema.clone(), index_name)?;
+    let mut writer = create_writer(output_path, schema.clone())?;
 
     // Process files with or without sorting
     let stats = if let Some(sort_col) = sort_column_name {
@@ -206,11 +208,8 @@ fn read_schema_from_file(file_path: &str) -> Result<SchemaRef, Box<dyn Error>> {
 }
 
 // Writer creation
-fn create_writer(output_path: &str, schema: SchemaRef, index_name: &str) -> Result<ArrowWriter<RateLimitedWriter<File>>, Box<dyn Error>> {
-    let config = SETTINGS_STORE
-        .get(index_name)
-        .map(|r| r.clone())
-        .unwrap_or_default();
+fn create_writer(output_path: &str, schema: SchemaRef) -> Result<ArrowWriter<RateLimitedWriter<File>>, Box<dyn Error>> {
+    let config = NativeSettings::default();
     let props = WriterPropertiesBuilder::build(&config);
 
     let out_file = File::create(output_path)
