@@ -4,10 +4,10 @@ use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use arrow::record_batch::RecordBatch;
-use arrow::compute::{concat_batches, sort_to_indices, take};
+use arrow::compute::{concat_batches, lexsort_to_indices, take, SortColumn};
 use dashmap::DashMap;
 use jni::objects::{JClass, JString, JObject};
-use jni::sys::{jint, jlong, jobject, jboolean};
+use jni::sys::{jint, jlong, jobject};
 use jni::JNIEnv;
 use lazy_static::lazy_static;
 use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
@@ -33,8 +33,8 @@ pub mod profiler;
 
 /// Per-writer sort configuration stored at create time, consumed at close time.
 struct SortConfig {
-    sort_column: Option<String>,
-    reverse_sort: bool,
+    sort_columns: Vec<String>,
+    reverse_sorts: Vec<bool>,
     original_filename: String,
 }
 
@@ -64,12 +64,12 @@ impl NativeParquetWriter {
         filename: String,
         index_name: String,
         schema_address: i64,
-        sort_column: Option<String>,
-        reverse_sort: bool,
+        sort_columns: Vec<String>,
+        reverse_sorts: Vec<bool>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         log_info!(
-            "[RUST] create_writer called for file: {}, index: {}, schema_address: {}, sort_column: {:?}, reverse_sort: {}",
-            filename, index_name, schema_address, sort_column, reverse_sort
+            "[RUST] create_writer called for file: {}, index: {}, schema_address: {}, sort_columns: {:?}, reverse_sorts: {:?}",
+            filename, index_name, schema_address, sort_columns, reverse_sorts
         );
 
         if (schema_address as *mut u8).is_null() {
@@ -110,8 +110,8 @@ impl NativeParquetWriter {
 
         // Store sort config so close_writer can use it
         SORT_CONFIG.insert(temp_filename, SortConfig {
-            sort_column,
-            reverse_sort,
+            sort_columns,
+            reverse_sorts,
             original_filename: filename,
         });
 
@@ -193,13 +193,13 @@ impl NativeParquetWriter {
                             // Retrieve and consume sort config
                             let sort_config = SORT_CONFIG.remove(&temp_filename).map(|(_, v)| v);
 
-                            let (sort_column, reverse_sort) = match &sort_config {
-                                Some(cfg) => (cfg.sort_column.clone(), cfg.reverse_sort),
-                                None => (None, false),
+                            let (sort_columns, reverse_sorts) = match &sort_config {
+                                Some(cfg) => (cfg.sort_columns.clone(), cfg.reverse_sorts.clone()),
+                                None => (vec![], vec![]),
                             };
 
                             // Sort the temp file and write to the original filename
-                            Self::sort_and_rewrite_parquet(&temp_filename, &filename, sort_column.as_deref(), reverse_sort)?;
+                            Self::sort_and_rewrite_parquet(&temp_filename, &filename, &sort_columns, &reverse_sorts)?;
 
                             // Clean up temp file
                             let _ = std::fs::remove_file(&temp_filename);
@@ -225,36 +225,34 @@ impl NativeParquetWriter {
         }
     }
 
-    /// Read the temp parquet file, sort by sort_column (if any), rewrite ___row_id,
+    /// Read the temp parquet file, sort by sort_columns (if any), rewrite ___row_id,
     /// and write the final sorted file to `output_filename`.
     fn sort_and_rewrite_parquet(
         temp_filename: &str,
         output_filename: &str,
-        sort_column: Option<&str>,
-        reverse_sort: bool,
+        sort_columns: &[String],
+        reverse_sorts: &[bool],
     ) -> Result<(), Box<dyn std::error::Error>> {
         log_info!(
-            "[RUST] sort_and_rewrite_parquet: temp={}, output={}, sort_column={:?}, reverse={}",
-            temp_filename, output_filename, sort_column, reverse_sort
+            "[RUST] sort_and_rewrite_parquet: temp={}, output={}, sort_columns={:?}, reverse_sorts={:?}",
+            temp_filename, output_filename, sort_columns, reverse_sorts
         );
 
-        // If no sort column, just rename the temp file to the final name
-        if sort_column.is_none() {
-            log_info!("[RUST] No sort column specified, renaming temp file to final");
+        // If no sort columns, just rename the temp file to the final name
+        if sort_columns.is_empty() {
+            log_info!("[RUST] No sort columns specified, renaming temp file to final");
             std::fs::rename(temp_filename, output_filename)?;
             return Ok(());
         }
-
-        let sort_col = sort_column.unwrap();
 
         // Check file size to decide sorting strategy
         let file_size = std::fs::metadata(temp_filename)?.len();
         const MAX_MEMORY_SIZE: u64 = 32 * 1024 * 1024; // 32MB threshold
 
         if file_size <= MAX_MEMORY_SIZE {
-            Self::sort_small_file(temp_filename, output_filename, sort_col, reverse_sort)
+            Self::sort_small_file(temp_filename, output_filename, sort_columns, reverse_sorts)
         } else {
-            Self::sort_large_file(temp_filename, output_filename, sort_col, reverse_sort)
+            Self::sort_large_file(temp_filename, output_filename, sort_columns, reverse_sorts)
         }
     }
 
@@ -262,8 +260,8 @@ impl NativeParquetWriter {
     fn sort_small_file(
         temp_filename: &str,
         output_filename: &str,
-        sort_column: &str,
-        reverse_sort: bool,
+        sort_columns: &[String],
+        reverse_sorts: &[bool],
     ) -> Result<(), Box<dyn std::error::Error>> {
         log_info!("[RUST] Using in-memory sort for small file: {}", temp_filename);
 
@@ -285,7 +283,7 @@ impl NativeParquetWriter {
         let schema = batches[0].schema();
         let combined_batch = concat_batches(&schema, &batches)?;
 
-        let sorted_batch = Self::sort_batch(&combined_batch, sort_column, reverse_sort)?;
+        let sorted_batch = Self::sort_batch(&combined_batch, sort_columns, reverse_sorts)?;
         let final_batch = Self::rewrite_row_ids(&sorted_batch, &schema)?;
 
         Self::write_final_file(output_filename, &final_batch, schema)?;
@@ -298,8 +296,8 @@ impl NativeParquetWriter {
     fn sort_large_file(
         temp_filename: &str,
         output_filename: &str,
-        sort_column: &str,
-        reverse_sort: bool,
+        sort_columns: &[String],
+        reverse_sorts: &[bool],
     ) -> Result<(), Box<dyn std::error::Error>> {
         log_info!("[RUST] Using streaming sort for large file: {}", temp_filename);
 
@@ -316,7 +314,7 @@ impl NativeParquetWriter {
             let batch = batch_result?;
             let schema = batch.schema();
 
-            let sorted_batch = Self::sort_batch(&batch, sort_column, reverse_sort)?;
+            let sorted_batch = Self::sort_batch(&batch, sort_columns, reverse_sorts)?;
 
             // Write sorted batch to temporary file
             let chunk_filename = temp_dir.join(format!(
@@ -342,7 +340,7 @@ impl NativeParquetWriter {
         log_info!("[RUST] Created {} sorted chunks, now merging", batch_count);
 
         // Merge all sorted chunks
-        let merged_batch = Self::merge_sorted_chunks(&temp_files, sort_column, reverse_sort)?;
+        let merged_batch = Self::merge_sorted_chunks(&temp_files, sort_columns, reverse_sorts)?;
 
         // Clean up chunk files
         for chunk_file in &temp_files {
@@ -358,23 +356,31 @@ impl NativeParquetWriter {
         Ok(())
     }
 
-    /// Sort a single RecordBatch by the given column.
+    /// Sort a single RecordBatch by the given columns (lexicographic, tie-breaking in list order).
     fn sort_batch(
         batch: &RecordBatch,
-        sort_column: &str,
-        reverse: bool,
+        sort_columns: &[String],
+        reverse_sorts: &[bool],
     ) -> Result<RecordBatch, Box<dyn std::error::Error>> {
-        let col_index = batch.schema().index_of(sort_column)
-            .map_err(|_| format!("Sort column '{}' not found in schema", sort_column))?;
+        let columns: Vec<SortColumn> = sort_columns
+            .iter()
+            .enumerate()
+            .map(|(i, col_name)| {
+                let reverse = reverse_sorts.get(i).copied().unwrap_or(false);
+                let options = arrow::compute::SortOptions {
+                    descending: reverse,
+                    nulls_first: !reverse,
+                };
+                let col_index = batch.schema().index_of(col_name)
+                    .map_err(|_| format!("Sort column '{}' not found in schema", col_name))?;
+                Ok(SortColumn {
+                    values: batch.column(col_index).clone(),
+                    options: Some(options),
+                })
+            })
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
-        let sort_col = batch.column(col_index);
-
-        let options = arrow::compute::SortOptions {
-            descending: reverse,
-            nulls_first: !reverse,
-        };
-
-        let indices = sort_to_indices(sort_col, Some(options), None)?;
+        let indices = lexsort_to_indices(&columns, None)?;
 
         let sorted_columns: Result<Vec<_>, _> = batch
             .columns()
@@ -386,8 +392,8 @@ impl NativeParquetWriter {
         let sorted_batch = RecordBatch::try_new(batch.schema(), sorted_columns)?;
 
         log_debug!(
-            "[RUST] Sorted {} rows by column '{}' (reverse={})",
-            batch.num_rows(), sort_column, reverse
+            "[RUST] Sorted {} rows by columns {:?} (reverse_sorts={:?})",
+            batch.num_rows(), sort_columns, reverse_sorts
         );
 
         Ok(sorted_batch)
@@ -396,8 +402,8 @@ impl NativeParquetWriter {
     /// Merge multiple sorted chunk files into one sorted RecordBatch.
     fn merge_sorted_chunks(
         chunk_files: &[std::path::PathBuf],
-        sort_column: &str,
-        reverse: bool,
+        sort_columns: &[String],
+        reverse_sorts: &[bool],
     ) -> Result<RecordBatch, Box<dyn std::error::Error>> {
         if chunk_files.len() == 1 {
             let file = File::open(&chunk_files[0])?;
@@ -426,7 +432,7 @@ impl NativeParquetWriter {
         let combined = concat_batches(&schema, &all_batches)?;
 
         // Final sort across all chunks
-        Self::sort_batch(&combined, sort_column, reverse)
+        Self::sort_batch(&combined, sort_columns, reverse_sorts)
     }
 
     /// If a ___row_id column exists, rewrite it with sequential values 0..N.
@@ -591,7 +597,7 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_init
 }
 
 /// JNI entry point for createWriter.
-/// Matches Java: createWriter(String file, String indexName, long schemaAddress, String sortColumn, boolean reverseSort) throws IOException
+/// Matches Java: createWriter(String file, String indexName, long schemaAddress, List<String> sortColumns, List<Boolean> reverseSorts) throws IOException
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_createWriter(
     mut env: JNIEnv,
@@ -599,26 +605,44 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_crea
     file: JString,
     index_name: JString,
     schema_address: jlong,
-    sort_column: JString,
-    reverse_sort: jboolean,
+    sort_columns: JObject,
+    reverse_sorts: JObject,
 ) {
     let filename: String = env.get_string(&file).expect("Couldn't get file string!").into();
     let index_name: String = env.get_string(&index_name).expect("Couldn't get index_name string!").into();
 
-    // sort_column can be null from Java — handle it safely
-    let sort_col: Option<String> = if sort_column.is_null() {
-        None
+    // sort_columns is a Java List<String> — convert to Vec<String>, treating null as empty
+    let sort_cols: Vec<String> = if sort_columns.is_null() {
+        vec![]
     } else {
-        Some(env.get_string(&sort_column).expect("Couldn't get sort_column string!").into())
+        match convert_java_list_to_string_vec(&mut env, sort_columns) {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!("[RUST] Failed to convert sort columns list: {}", e);
+                let _ = env.throw_new("java/io/IOException", &format!("Failed to read sort columns: {}", e));
+                return;
+            }
+        }
     };
 
-    let reverse = reverse_sort != 0;
+    // reverse_sorts is a Java List<Boolean> — convert to Vec<bool>, treating null as empty
+    let reverse_flags: Vec<bool> = if reverse_sorts.is_null() {
+        vec![]
+    } else {
+        match convert_java_list_to_bool_vec(&mut env, reverse_sorts) {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!("[RUST] Failed to convert reverse sorts list: {}", e);
+                let _ = env.throw_new("java/io/IOException", &format!("Failed to read reverse sorts: {}", e));
+                return;
+            }
+        }
+    };
 
-    match NativeParquetWriter::create_writer(filename, index_name, schema_address as i64, sort_col, reverse) {
+    match NativeParquetWriter::create_writer(filename, index_name, schema_address as i64, sort_cols, reverse_flags) {
         Ok(_) => {},
         Err(e) => {
             log_error!("[RUST] create_writer failed: {}", e);
-            // Throw IOException to Java since the native method declares throws IOException
             let _ = env.throw_new(
                 "java/io/IOException",
                 &format!("create_writer failed: {}", e),
@@ -842,6 +866,61 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_getF
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// JNI helpers for List<String> and List<Boolean>
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Converts a Java `List<String>` to a Rust `Vec<String>` via JNI.
+fn convert_java_list_to_string_vec(
+    env: &mut JNIEnv,
+    list: JObject,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let size = env.call_method(&list, "size", "()I", &[])?.i()? as usize;
+    let mut result = Vec::with_capacity(size);
+
+    for i in 0..size {
+        let obj = env
+            .call_method(
+                &list,
+                "get",
+                "(I)Ljava/lang/Object;",
+                &[(i as i32).into()],
+            )?
+            .l()?;
+
+        let jstr: JString = obj.into();
+        let rust_string: String = env.get_string(&jstr)?.into();
+        result.push(rust_string);
+    }
+
+    Ok(result)
+}
+
+/// Converts a Java `List<Boolean>` to a Rust `Vec<bool>` via JNI.
+fn convert_java_list_to_bool_vec(
+    env: &mut JNIEnv,
+    list: JObject,
+) -> Result<Vec<bool>, Box<dyn std::error::Error>> {
+    let size = env.call_method(&list, "size", "()I", &[])?.i()? as usize;
+    let mut result = Vec::with_capacity(size);
+
+    for i in 0..size {
+        let obj = env
+            .call_method(
+                &list,
+                "get",
+                "(I)Ljava/lang/Object;",
+                &[(i as i32).into()],
+            )?
+            .l()?;
+
+        let val = env.call_method(&obj, "booleanValue", "()Z", &[])?.z()?;
+        result.push(val);
+    }
+
+    Ok(result)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -952,7 +1031,7 @@ mod tests {
     /// Create a writer with no sorting
     fn create_writer_and_assert_success(filename: &str) -> (Arc<Schema>, i64) {
         let (schema, schema_ptr) = create_test_ffi_schema();
-        let result = NativeParquetWriter::create_writer(filename.to_string(), "test-index".to_string(), schema_ptr, None, false);
+        let result = NativeParquetWriter::create_writer(filename.to_string(), "test-index".to_string(), schema_ptr, vec![], vec![]);
         assert!(result.is_ok());
         (schema, schema_ptr)
     }
@@ -961,7 +1040,7 @@ mod tests {
     fn create_sorted_writer_and_assert_success(filename: &str, sort_column: &str, reverse: bool) -> (Arc<Schema>, i64) {
         let (schema, schema_ptr) = create_test_ffi_schema();
         let result = NativeParquetWriter::create_writer(
-            filename.to_string(), "test-index".to_string(), schema_ptr, Some(sort_column.to_string()), reverse
+            filename.to_string(), "test-index".to_string(), schema_ptr, vec![sort_column.to_string()], vec![reverse]
         );
         assert!(result.is_ok());
         (schema, schema_ptr)
@@ -1003,7 +1082,7 @@ mod tests {
         let invalid_path = "/invalid/path/that/does/not/exist/test.parquet";
         let (_schema, schema_ptr) = create_test_ffi_schema();
 
-        let result = NativeParquetWriter::create_writer(invalid_path.to_string(), "test-index".to_string(), schema_ptr, None, false);
+        let result = NativeParquetWriter::create_writer(invalid_path.to_string(), "test-index".to_string(), schema_ptr, vec![], vec![]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("No such file or directory"));
 
@@ -1015,7 +1094,7 @@ mod tests {
         let (_temp_dir, filename) = get_temp_file_path("invalid_schema.parquet");
 
         // Test with null schema pointer
-        let result = NativeParquetWriter::create_writer(filename, "test-index".to_string(), 0, None, false);
+        let result = NativeParquetWriter::create_writer(filename, "test-index".to_string(), 0, vec![], vec![]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid schema address"));
     }
@@ -1027,7 +1106,7 @@ mod tests {
 
         // Second writer creation for same file should fail
         let (_, schema_ptr2) = create_test_ffi_schema();
-        let result2 = NativeParquetWriter::create_writer(filename.clone(), "test-index".to_string(), schema_ptr2, None, false);
+        let result2 = NativeParquetWriter::create_writer(filename.clone(), "test-index".to_string(), schema_ptr2, vec![], vec![]);
         assert!(result2.is_err());
         assert!(result2.unwrap_err().to_string().contains("Writer already exists"));
 
@@ -1328,7 +1407,7 @@ mod tests {
                 let filename = file_path.to_string_lossy().to_string();
                 let (_schema, schema_ptr) = create_test_ffi_schema();
 
-                if NativeParquetWriter::create_writer(filename.clone(), "test-index".to_string(), schema_ptr, None, false).is_ok() {
+                if NativeParquetWriter::create_writer(filename.clone(), "test-index".to_string(), schema_ptr, vec![], vec![]).is_ok() {
                     success_count.fetch_add(1, Ordering::SeqCst);
                     // Write data so close can produce a valid file
                     let (ap, sp) = create_test_ffi_data().unwrap();

@@ -127,7 +127,7 @@ pub fn profile_sorted_merge_with_config(
         &existing_file_paths,
         &output_file,
         "TempIndex",
-        "EventDate"
+        &["EventDate".to_string()]
     )?;
 
     let duration = start.elapsed();

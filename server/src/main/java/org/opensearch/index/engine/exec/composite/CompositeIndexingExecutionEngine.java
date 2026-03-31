@@ -71,8 +71,12 @@ public class CompositeIndexingExecutionEngine implements IndexingExecutionEngine
         SortField[] sortFields = engineConfig.getIndexSort() != null
             ? engineConfig.getIndexSort().getSort()
             : null;
-        String sortKey = (sortFields != null && sortFields.length > 0) ? sortFields[0].getField() : null;
-        boolean reverseSort = (sortFields != null && sortFields.length > 0) && sortFields[0].getReverse();
+        List<String> sortKeys = (sortFields != null && sortFields.length > 0)
+            ? Arrays.stream(sortFields).map(SortField::getField).toList()
+            : List.of();
+        List<Boolean> reverseSorts = (sortFields != null && sortFields.length > 0)
+            ? Arrays.stream(sortFields).map(SortField::getReverse).toList()
+            : List.of();
         List<DataSourcePlugin> dataSourcePlugins = pluginsService.filterPlugins(DataSourcePlugin.class)
             .stream().toList();
         if (dataSourcePlugins.isEmpty()) throw new IllegalStateException("No data formats found, can't initialise Engine");
@@ -132,8 +136,8 @@ public class CompositeIndexingExecutionEngine implements IndexingExecutionEngine
             IndexingExecutionEngine<?> indexingEngine = plugin.indexingEngine(
                 engineConfig, mapperService, isPrimary, shardPath, indexSettings, assignments
             );
-            indexingEngine.setSortColumn(sortKey);
-            indexingEngine.setReverseSort(reverseSort);
+            indexingEngine.setSortColumns(sortKeys);
+            indexingEngine.setReverseSorts(reverseSorts);
             delegates.add(indexingEngine);
         }
 

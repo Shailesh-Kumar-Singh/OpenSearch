@@ -37,11 +37,11 @@ public interface IndexingExecutionEngine<T extends DataFormat> extends Closeable
         return 0;
     }
 
-    default void setSortColumn(String sortColumn) {
+    default void setSortColumns(List<String> sortColumns) {
         // no-op by default
     }
 
-    default void setReverseSort(boolean reverseSort) {
+    default void setReverseSorts(List<Boolean> reverseSorts) {
         // no-op by default
     }
 

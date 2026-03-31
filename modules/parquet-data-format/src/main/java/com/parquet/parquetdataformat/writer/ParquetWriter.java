@@ -16,6 +16,7 @@ import org.opensearch.index.engine.exec.WriterFileSet;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import static com.parquet.parquetdataformat.engine.ParquetDataFormat.PARQUET_DATA_FORMAT;
 
@@ -53,12 +54,12 @@ public class ParquetWriter implements Writer<ParquetDocumentInput> {
         long writerGeneration,
         ArrowBufferPool arrowBufferPool,
         IndexSettings indexSettings,
-        String sortColumn,
-        boolean reverseSort,
+        List<String> sortColumns,
+        List<Boolean> reverseSorts,
         EngineRole engineRole
     ) {
         this.file = file;
-        this.vsrManager = new VSRManager(file, indexSettings.getIndex().getName(), schema, arrowBufferPool, sortColumn, reverseSort);
+        this.vsrManager = new VSRManager(file, indexSettings.getIndex().getName(), schema, arrowBufferPool, sortColumns, reverseSorts);
         this.writerGeneration = writerGeneration;
         this.engineRole = engineRole;
     }

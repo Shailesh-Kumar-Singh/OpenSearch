@@ -45,8 +45,8 @@ public abstract class MergeHandler {
     private final Deque<OneMerge> mergingSegments = new ArrayDeque<>();
     private final Set<Segment> currentlyMergingSegments = new HashSet<>();
     private final Logger logger;
-    private final String sortKey;
-    private final boolean reverseSort;
+    private final List<String> sortKeys;
+    private final List<Boolean> reverseSorts;
     private final String indexName;
 
     public MergeHandler(
@@ -64,8 +64,12 @@ public abstract class MergeHandler {
         org.apache.lucene.search.SortField[] sortFields = compositeEngine.getEngineConfig().getIndexSort() != null
             ? compositeEngine.getEngineConfig().getIndexSort().getSort()
             : null;
-        sortKey = (sortFields != null && sortFields.length > 0) ? sortFields[0].getField() : null;
-        reverseSort = (sortFields != null && sortFields.length > 0) && sortFields[0].getReverse();
+        sortKeys = (sortFields != null && sortFields.length > 0)
+            ? java.util.Arrays.stream(sortFields).map(org.apache.lucene.search.SortField::getField).toList()
+            : List.of();
+        reverseSorts = (sortFields != null && sortFields.length > 0)
+            ? java.util.Arrays.stream(sortFields).map(org.apache.lucene.search.SortField::getReverse).toList()
+            : List.of();
 
         compositeIndexingExecutionEngine.getDelegates().forEach(engine -> {
             try {
@@ -155,7 +159,7 @@ public abstract class MergeHandler {
             // Merging primary data format
             MergeResult primaryMergeResult = dataFormatMergerMap
                 .get(compositeDataFormat.getPrimaryDataFormat())
-                .merge(getMergeInput(filesToMerge, mergedWriterGeneration, sortKey, reverseSort));
+                .merge(getMergeInput(filesToMerge, mergedWriterGeneration, sortKeys, reverseSorts));
 
             mergedWriterFileSet.put(
                 compositeDataFormat.getPrimaryDataFormat(),
@@ -170,7 +174,7 @@ public abstract class MergeHandler {
                     List<WriterFileSet> files = getFilesToMerge(oneMerge, df);
 
                     MergeResult secondaryMerge = dataFormatMergerMap.get(df)
-                        .merge(getMergeInput(files, mergedWriterGeneration, sortKey, reverseSort), primaryMergeResult.getRowIdMapping());
+                        .merge(getMergeInput(files, mergedWriterGeneration, sortKeys, reverseSorts), primaryMergeResult.getRowIdMapping());
                     mergedWriterFileSet.put(df,
                         secondaryMerge.getMergedWriterFileSetForDataformat(df));
                 });
@@ -206,8 +210,8 @@ public abstract class MergeHandler {
         }
     }
 
-    public MergeInput getMergeInput(List<WriterFileSet> filesToMerge, long mergedWriterGeneration, String sortKey, boolean reverseSort) {
-        return new MergeInput(filesToMerge, mergedWriterGeneration, sortKey, reverseSort, indexName);
+    public MergeInput getMergeInput(List<WriterFileSet> filesToMerge, long mergedWriterGeneration, List<String> sortKeys, List<Boolean> reverseSorts) {
+        return new MergeInput(filesToMerge, mergedWriterGeneration, sortKeys, reverseSorts, indexName);
     }
 
     private List<WriterFileSet> getFilesToMerge(OneMerge oneMerge, DataFormat dataFormat) {

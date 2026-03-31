@@ -95,24 +95,30 @@ const IO_CHANNEL_BUFFER: usize = 2;
 // Sort-direction helpers
 // =============================================================================
 
-/// Returns `true` if value `a` should come before or at the same position as
-/// value `b` in the requested output order.
-///
-/// - **ascending**  (reverse = false): `a <= b`
-/// - **descending** (reverse = true):  `a >= b`
+/// Returns `true` if value tuple `a` should come before or at the same position as
+/// value tuple `b` in the requested output order (lexicographic comparison).
 #[inline(always)]
-fn comes_before_or_equal(a: i64, b: i64, reverse: bool) -> bool {
-    if reverse { a >= b } else { a <= b }
+fn comes_before_or_equal(a: &[i64], b: &[i64], reverse_sorts: &[bool]) -> bool {
+    for (i, (av, bv)) in a.iter().zip(b.iter()).enumerate() {
+        if av != bv {
+            let reverse = reverse_sorts.get(i).copied().unwrap_or(false);
+            return if reverse { av > bv } else { av < bv };
+        }
+    }
+    true // all equal
 }
 
-/// Returns `true` if value `a` strictly exceeds value `b` in the sort
-/// direction — i.e. `a` would appear *after* `b` in the output.
-///
-/// - **ascending**  (reverse = false): `a > b`
-/// - **descending** (reverse = true):  `a < b`
+/// Returns `true` if value tuple `a` strictly exceeds value tuple `b` in the sort
+/// direction (lexicographic comparison).
 #[inline(always)]
-fn exceeds(a: i64, b: i64, reverse: bool) -> bool {
-    if reverse { a < b } else { a > b }
+fn exceeds(a: &[i64], b: &[i64], reverse_sorts: &[bool]) -> bool {
+    for (i, (av, bv)) in a.iter().zip(b.iter()).enumerate() {
+        if av != bv {
+            let reverse = reverse_sorts.get(i).copied().unwrap_or(false);
+            return if reverse { av < bv } else { av > bv };
+        }
+    }
+    false // all equal => not exceeding
 }
 
 // =============================================================================
@@ -387,7 +393,7 @@ fn build_parquet_root_schema(input_paths: &[String]) -> MergeResult<Arc<Type>> {
 /// sort column, and has at least one row. Called once upfront before opening
 /// any cursors, so that we fail fast with a clear error rather than
 /// discovering problems mid-merge.
-fn validate_input_files(input_files: &[String], sort_column: &str) -> MergeResult<()> {
+fn validate_input_files(input_files: &[String], sort_columns: &[String]) -> MergeResult<()> {
     for (idx, path) in input_files.iter().enumerate() {
         let file = File::open(path).map_err(|e| {
             MergeError::Logic(format!(
@@ -399,7 +405,6 @@ fn validate_input_files(input_files: &[String], sort_column: &str) -> MergeResul
         let metadata = reader.metadata();
         let file_metadata = metadata.file_metadata();
 
-        // Check that the file has at least one row.
         let num_rows = file_metadata.num_rows();
         if num_rows == 0 {
             return Err(MergeError::Logic(format!(
@@ -409,7 +414,6 @@ fn validate_input_files(input_files: &[String], sort_column: &str) -> MergeResul
             )));
         }
 
-        // Check that ___row_id column exists.
         let schema_descr = file_metadata.schema_descr_ptr();
         let root = schema_descr.root_schema();
         let has_row_id = root
@@ -424,22 +428,23 @@ fn validate_input_files(input_files: &[String], sort_column: &str) -> MergeResul
             )));
         }
 
-        // Check that the sort column exists.
-        let has_sort_col = root
-            .get_fields()
-            .iter()
-            .any(|f| f.name() == sort_column);
-        if !has_sort_col {
-            let available: Vec<_> = root
+        for sort_col in sort_columns {
+            let has_sort_col = root
                 .get_fields()
                 .iter()
-                .map(|f| f.name().to_string())
-                .collect();
-            return Err(MergeError::Logic(format!(
-                "Sort column '{}' not found in file '{}' (index {}). \
-                 Available columns: {:?}",
-                sort_column, path, idx, available
-            )));
+                .any(|f| f.name() == sort_col.as_str());
+            if !has_sort_col {
+                let available: Vec<_> = root
+                    .get_fields()
+                    .iter()
+                    .map(|f| f.name().to_string())
+                    .collect();
+                return Err(MergeError::Logic(format!(
+                    "Sort column '{}' not found in file '{}' (index {}). \
+                     Available columns: {:?}",
+                    sort_col, path, idx, available
+                )));
+            }
         }
     }
     Ok(())
@@ -505,11 +510,11 @@ struct FileCursor {
     /// Unique identifier for this cursor (index into the cursors array).
     file_id: usize,
 
-    /// Column index of the sort column within each batch.
-    sort_col_idx: usize,
+    /// Column indices of the sort columns within each batch.
+    sort_col_indices: Vec<usize>,
 
-    /// Arrow data type of the sort column (cached for fast dispatch).
-    sort_col_type: ArrowDataType,
+    /// Arrow data types of the sort columns (cached for fast dispatch).
+    sort_col_types: Vec<ArrowDataType>,
 }
 
 impl FileCursor {
@@ -529,25 +534,29 @@ impl FileCursor {
     fn new(
         path: &str,
         file_id: usize,
-        sort_column: &str,
+        sort_columns: &[String],
         batch_size: usize,
     ) -> MergeResult<(Self, Arc<ArrowSchema>)> {
         let file = File::open(path)?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
         let schema = builder.schema().clone();
 
-        // Resolve the sort column's data type for fast value extraction.
-        let sort_col_type = schema
-            .fields()
-            .iter()
-            .find(|f| f.name() == sort_column)
-            .map(|f| f.data_type().clone())
-            .ok_or_else(|| {
-                MergeError::Logic(format!(
-                    "Sort column '{}' not found in file '{}' (cursor {})",
-                    sort_column, path, file_id
-                ))
-            })?;
+        // Resolve each sort column's data type for fast value extraction.
+        let mut sort_col_types = Vec::with_capacity(sort_columns.len());
+        for col_name in sort_columns {
+            let dt = schema
+                .fields()
+                .iter()
+                .find(|f| f.name() == col_name.as_str())
+                .map(|f| f.data_type().clone())
+                .ok_or_else(|| {
+                    MergeError::Logic(format!(
+                        "Sort column '{}' not found in file '{}' (cursor {})",
+                        col_name, path, file_id
+                    ))
+                })?;
+            sort_col_types.push(dt);
+        }
 
         // Project out the ___row_id column — it will be rewritten.
         let parquet_schema = builder.parquet_schema().clone();
@@ -582,17 +591,21 @@ impl FileCursor {
         // Capture the projected schema for union-schema computation.
         let projected_schema = first_batch.schema();
 
-        // Resolve sort column index within the projected schema.
-        let sort_col_idx = projected_schema
-            .fields()
-            .iter()
-            .position(|f| f.name() == sort_column)
-            .ok_or_else(|| {
-                MergeError::Logic(format!(
-                    "Sort column '{}' not found after projection in file '{}'",
-                    sort_column, path
-                ))
-            })?;
+        // Resolve sort column indices within the projected schema.
+        let mut sort_col_indices = Vec::with_capacity(sort_columns.len());
+        for col_name in sort_columns {
+            let idx = projected_schema
+                .fields()
+                .iter()
+                .position(|f| f.name() == col_name.as_str())
+                .ok_or_else(|| {
+                    MergeError::Logic(format!(
+                        "Sort column '{}' not found after projection in file '{}'",
+                        col_name, path
+                    ))
+                })?;
+            sort_col_indices.push(idx);
+        }
 
         // Bounded channel of capacity 1: at most one prefetched batch in flight.
         let (prefetch_tx, prefetch_rx) =
@@ -608,8 +621,8 @@ impl FileCursor {
             current_batch: Some(first_batch),
             row_idx: 0,
             file_id,
-            sort_col_idx,
-            sort_col_type,
+            sort_col_indices,
+            sort_col_types,
         };
 
         // Kick off prefetch for the second batch.
@@ -664,29 +677,28 @@ impl FileCursor {
         }
     }
 
-    /// Returns the sort column value at the current row position.
+    /// Returns the sort column values at the current row position.
     #[inline]
-    fn current_sort_value(&self) -> MergeResult<i64> {
+    fn current_sort_values(&self) -> MergeResult<Vec<i64>> {
         let batch = self
             .current_batch
             .as_ref()
             .ok_or_else(|| MergeError::Logic("Cursor exhausted".into()))?;
-        get_sort_value(batch, self.row_idx, self.sort_col_idx, &self.sort_col_type)
+        get_sort_values(batch, self.row_idx, &self.sort_col_indices, &self.sort_col_types)
     }
 
-    /// Returns the sort column value at the last row of the current batch.
-    /// Used by Tier 2 to check if the entire batch can be emitted at once.
+    /// Returns the sort column values at the last row of the current batch.
     #[inline]
-    fn last_sort_value(&self) -> MergeResult<i64> {
+    fn last_sort_values(&self) -> MergeResult<Vec<i64>> {
         let batch = self
             .current_batch
             .as_ref()
             .ok_or_else(|| MergeError::Logic("Cursor exhausted".into()))?;
-        get_sort_value(
+        get_sort_values(
             batch,
             batch.num_rows() - 1,
-            self.sort_col_idx,
-            &self.sort_col_type,
+            &self.sort_col_indices,
+            &self.sort_col_types,
         )
     }
 
@@ -732,40 +744,46 @@ impl FileCursor {
 /// value.
 ///
 /// The heap is a standard `BinaryHeap` (max-heap internally). The `Ord`
-/// implementation is parameterised by `reverse`:
+/// implementation is parameterised by `reverse_sorts`:
 ///
-/// - **ascending merge** (`reverse = false`): comparison is *reversed* so
+/// - **ascending** (`reverse_sorts[i] = false`): comparison is *reversed* so
 ///   that the **smallest** `sort_value` has highest priority (min-heap).
-/// - **descending merge** (`reverse = true`): comparison is *natural* so
+/// - **descending** (`reverse_sorts[i] = true`): comparison is *natural* so
 ///   that the **largest** `sort_value` has highest priority (max-heap).
 #[derive(Debug)]
 struct HeapItem {
-    /// The sort column value at the cursor's current row.
-    sort_value: i64,
+    /// The sort column values at the cursor's current row.
+    sort_values: Vec<i64>,
     /// Index into the cursors array identifying which input file this is from.
     file_id: usize,
-    /// Sort direction: `false` = ascending (min-heap), `true` = descending
+    /// Sort direction per column: `false` = ascending (min-heap), `true` = descending
     /// (max-heap).
-    reverse: bool,
+    reverse_sorts: Vec<bool>,
 }
 
 impl Eq for HeapItem {}
 
 impl PartialEq for HeapItem {
     fn eq(&self, other: &Self) -> bool {
-        self.sort_value == other.sort_value
+        self.sort_values == other.sort_values
     }
 }
 
 impl Ord for HeapItem {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.reverse {
-            // Descending merge: natural order → largest value popped first.
-            self.sort_value.cmp(&other.sort_value)
-        } else {
-            // Ascending merge: reversed order → smallest value popped first.
-            other.sort_value.cmp(&self.sort_value)
+        // Lexicographic comparison across all sort columns
+        for (i, (a, b)) in self.sort_values.iter().zip(other.sort_values.iter()).enumerate() {
+            let reverse = self.reverse_sorts.get(i).copied().unwrap_or(false);
+            let c = if reverse {
+                a.cmp(b)
+            } else {
+                b.cmp(a)
+            };
+            if c != Ordering::Equal {
+                return c;
+            }
         }
+        Ordering::Equal
     }
 }
 
@@ -843,6 +861,21 @@ fn get_sort_value(
     Ok(val)
 }
 
+/// Extracts sort column values as `Vec<i64>` from the given row for multiple columns.
+#[inline]
+fn get_sort_values(
+    batch: &RecordBatch,
+    row: usize,
+    col_indices: &[usize],
+    dtypes: &[ArrowDataType],
+) -> MergeResult<Vec<i64>> {
+    let mut values = Vec::with_capacity(col_indices.len());
+    for (col_idx, dtype) in col_indices.iter().zip(dtypes.iter()) {
+        values.push(get_sort_value(batch, row, *col_idx, dtype)?);
+    }
+    Ok(values)
+}
+
 // =============================================================================
 // Row ID helper
 // =============================================================================
@@ -868,10 +901,9 @@ fn append_row_id(
 
 /// JNI bridge for `RustBridge.mergeParquetFilesInRust`.
 ///
-/// Accepts a Java `List<String>` of input file paths, an output file path,
-/// a sort column name, and a reverse flag. When `is_reverse` is non-zero the
-/// merge produces descending output order. Returns 0 on success, -1 on failure
-/// (with a Java exception thrown).
+/// Accepts a Java `List<Path>` of input file paths, an output file path,
+/// a `List<String>` of sort column names, and a `List<Boolean>` of per-column
+/// reverse flags.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_mergeParquetFilesInRust(
     mut env: JNIEnv,
@@ -879,8 +911,8 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_merg
     input_files: JObject,
     output_file: JString,
     index_name: JString,
-    sort_column: JString,
-    is_reverse: jint,
+    sort_columns: JObject,
+    reverse_sorts: JObject,
 ) -> jint {
     let input_files_vec = match convert_java_list_to_vec(&mut env, input_files) {
         Ok(v) => v,
@@ -909,18 +941,35 @@ pub extern "system" fn Java_com_parquet_parquetdataformat_bridge_RustBridge_merg
         }
     };
 
-    let sort_col: String = match env.get_string(&sort_column) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log_error!("[RUST] Failed to read sort column name: {}", e);
-            let _ = env.throw_new("java/lang/RuntimeException", e.to_string());
-            return -1;
+    // sort_columns is a Java List<String> — convert to Vec<String>, treating null as empty
+    let sort_cols: Vec<String> = if sort_columns.is_null() {
+        vec![]
+    } else {
+        match convert_java_list_to_string_vec(&mut env, sort_columns) {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!("[RUST] Failed to convert sort columns list: {}", e);
+                let _ = env.throw_new("java/lang/RuntimeException", e.to_string());
+                return -1;
+            }
         }
     };
 
-    let reverse = is_reverse != 0;
+    // reverse_sorts is a Java List<Boolean> — convert to Vec<bool>, treating null as empty
+    let reverse_flags: Vec<bool> = if reverse_sorts.is_null() {
+        vec![]
+    } else {
+        match convert_java_list_to_bool_vec(&mut env, reverse_sorts) {
+            Ok(v) => v,
+            Err(e) => {
+                log_error!("[RUST] Failed to convert reverse sorts list: {}", e);
+                let _ = env.throw_new("java/lang/RuntimeException", e.to_string());
+                return -1;
+            }
+        }
+    };
 
-    match merge_streaming_full(&input_files_vec, &output_path, &idx_name, &sort_col, reverse) {
+    match merge_streaming_full(&input_files_vec, &output_path, &idx_name, &sort_cols, &reverse_flags) {
         Ok(_) => 0,
         Err(e) => {
             log_error!("[RUST] Merge failed: {:?}", e);
@@ -951,28 +1000,29 @@ pub fn merge_streaming(
     input_files: &[String],
     output_path: &str,
     index_name: &str,
-    sort_column: &str,
+    sort_columns: &[String],
 ) -> MergeResult<()> {
-    merge_streaming_full(input_files, output_path, index_name, sort_column, false)
+    let default_reverse = vec![false; sort_columns.len()];
+    merge_streaming_full(input_files, output_path, index_name, sort_columns, &default_reverse)
 }
 
-/// Performs a streaming k-way merge with an explicit sort direction.
+/// Performs a streaming k-way merge with an explicit sort direction per column.
 ///
-/// When `reverse` is `true` the inputs are assumed to be sorted in descending
-/// order and the output will also be in descending order.
+/// Each entry in `reverse_sorts` corresponds to the sort column at the same
+/// index. `true` means descending, `false` means ascending.
 pub fn merge_streaming_full(
     input_files: &[String],
     output_path: &str,
     index_name: &str,
-    sort_column: &str,
-    reverse: bool,
+    sort_columns: &[String],
+    reverse_sorts: &[bool],
 ) -> MergeResult<()> {
     merge_streaming_with_config(
         input_files,
         output_path,
         index_name,
-        sort_column,
-        reverse,
+        sort_columns,
+        reverse_sorts,
         BATCH_SIZE,
         OUTPUT_FLUSH_ROWS,
     )
@@ -980,14 +1030,12 @@ pub fn merge_streaming_full(
 
 /// Performs a streaming k-way merge with explicit configuration for batch size,
 /// output flush threshold, and sort direction.
-///
-/// See [`merge_streaming`] for the default ascending version.
 pub fn merge_streaming_with_config(
     input_files: &[String],
     output_path: &str,
     index_name: &str,
-    sort_column: &str,
-    reverse: bool,
+    sort_columns: &[String],
+    reverse_sorts: &[bool],
     batch_size: usize,
     output_flush_rows: usize,
 ) -> MergeResult<()> {
@@ -995,15 +1043,21 @@ pub fn merge_streaming_with_config(
         return Ok(());
     }
 
+    if sort_columns.is_empty() {
+        return Err(MergeError::Logic(
+            "At least one sort column is required for merge".into(),
+        ));
+    }
+
     let pool = get_merge_pool();
-    let direction_label = if reverse { "descending" } else { "ascending" };
+    let direction_label = if reverse_sorts.iter().all(|&r| !r) { "ascending" } else if reverse_sorts.iter().all(|&r| r) { "descending" } else { "mixed" };
 
     log_info!(
-        "[RUST] Starting streaming merge ({}): {} input files, sort_column='{}', \
+        "[RUST] Starting streaming merge ({}): {} input files, sort_columns={:?}, \
          batch_size={}, flush_rows={}, merge_threads={}, output='{}'",
         direction_label,
         input_files.len(),
-        sort_column,
+        sort_columns,
         batch_size,
         output_flush_rows,
         pool.current_num_threads(),
@@ -1023,7 +1077,7 @@ pub fn merge_streaming_with_config(
 
     // ── Upfront validation ──────────────────────────────────────────────
     // Check all files once: non-empty, have ___row_id, have sort column.
-    validate_input_files(input_files, sort_column)?;
+    validate_input_files(input_files, sort_columns)?;
 
     // ── Phase 1: Initialize cursors and collect projected schemas ────────
     let mut cursors: Vec<FileCursor> = Vec::with_capacity(input_files.len());
@@ -1032,7 +1086,7 @@ pub fn merge_streaming_with_config(
     for (file_id, path) in input_files.iter().enumerate() {
         log_debug!("[RUST] Opening cursor {} for file: {}", file_id, path);
         let (cursor, projected_schema) =
-            FileCursor::new(path, file_id, sort_column, batch_size)?;
+            FileCursor::new(path, file_id, sort_columns, batch_size)?;
         cursors.push(cursor);
         all_schemas.push(projected_schema.as_ref().clone());
     }
@@ -1102,11 +1156,11 @@ pub fn merge_streaming_with_config(
     // ── Phase 4: Seed the min/max-heap ──────────────────────────────────
     let mut heap: BinaryHeap<HeapItem> = BinaryHeap::with_capacity(num_cursors);
     for cursor in &cursors {
-        let sv = cursor.current_sort_value()?;
+        let sv = cursor.current_sort_values()?;
         heap.push(HeapItem {
-            sort_value: sv,
+            sort_values: sv,
             file_id: cursor.file_id,
-            reverse,
+            reverse_sorts: reverse_sorts.to_vec(),
         });
     }
 
@@ -1231,18 +1285,11 @@ pub fn merge_streaming_with_config(
         let cursor = &mut cursors[file_id];
 
         loop {
-            let heap_top = heap.peek().unwrap().sort_value;
+            let heap_top = &heap.peek().unwrap().sort_values;
 
             // TIER 2: Check if the entire remaining batch can be emitted.
-            //
-            // Ascending:  last value in batch ≤ heap_top  → all safe
-            // Descending: last value in batch ≥ heap_top  → all safe
-            //
-            // In both cases the batch is monotonic in the sort direction,
-            // so the *last* row is the extremal value for the remaining
-            // slice.
-            let last_val = cursor.last_sort_value()?;
-            if comes_before_or_equal(last_val, heap_top, reverse) {
+            let last_val = cursor.last_sort_values()?;
+            if comes_before_or_equal(&last_val, heap_top, reverse_sorts) {
                 let remaining = cursor.batch_height() - cursor.row_idx;
                 let slice = cursor.take_slice(cursor.row_idx, remaining);
                 let padded = pad_batch_to_schema(&slice, &data_schema)?;
@@ -1260,12 +1307,6 @@ pub fn merge_streaming_with_config(
             }
 
             // TIER 3: Binary search for the exact boundary within the batch.
-            //
-            // Ascending:  find the last row whose value ≤ heap_top.
-            // Descending: find the last row whose value ≥ heap_top.
-            //
-            // Because the batch is sorted in the appropriate direction, all
-            // rows before the boundary are safe to emit.
             let run_start = cursor.row_idx;
             let batch_h = cursor.batch_height();
             let batch = cursor.current_batch.as_ref().unwrap();
@@ -1275,14 +1316,14 @@ pub fn merge_streaming_with_config(
 
             while lo + 1 < hi {
                 let mid = lo + (hi - lo) / 2;
-                let mid_val = get_sort_value(
+                let mid_val = get_sort_values(
                     batch,
                     mid,
-                    cursor.sort_col_idx,
-                    &cursor.sort_col_type,
+                    &cursor.sort_col_indices,
+                    &cursor.sort_col_types,
                 )?;
 
-                if comes_before_or_equal(mid_val, heap_top, reverse) {
+                if comes_before_or_equal(&mid_val, heap_top, reverse_sorts) {
                     lo = mid;
                 } else {
                     hi = mid;
@@ -1309,14 +1350,14 @@ pub fn merge_streaming_with_config(
                 break;
             }
 
-            // Re-insert into the heap if the cursor's next value exceeds
+            // Re-insert into the heap if the cursor's next values exceed
             // heap_top in the sort direction.
-            let next_val = cursor.current_sort_value()?;
-            if exceeds(next_val, heap_top, reverse) {
+            let next_val = cursor.current_sort_values()?;
+            if exceeds(&next_val, heap_top, reverse_sorts) {
                 heap.push(HeapItem {
-                    sort_value: next_val,
+                    sort_values: next_val,
                     file_id,
-                    reverse,
+                    reverse_sorts: reverse_sorts.to_vec(),
                 });
                 break;
             }
@@ -1393,6 +1434,39 @@ fn convert_java_list_to_vec(
         unsafe {
             env.pop_local_frame(&JObject::null())?;
         }
+    }
+
+    Ok(result)
+}
+
+/// Converts a Java `List<String>` to a Rust `Vec<String>` via JNI.
+fn convert_java_list_to_string_vec(
+    env: &mut JNIEnv,
+    list: JObject,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    convert_java_list_to_vec(env, list)
+}
+
+/// Converts a Java `List<Boolean>` to a Rust `Vec<bool>` via JNI.
+fn convert_java_list_to_bool_vec(
+    env: &mut JNIEnv,
+    list: JObject,
+) -> Result<Vec<bool>, Box<dyn Error>> {
+    let size = env.call_method(&list, "size", "()I", &[])?.i()? as usize;
+    let mut result = Vec::with_capacity(size);
+
+    for i in 0..size {
+        let obj = env
+            .call_method(
+                &list,
+                "get",
+                "(I)Ljava/lang/Object;",
+                &[(i as i32).into()],
+            )?
+            .l()?;
+
+        let val = env.call_method(&obj, "booleanValue", "()Z", &[])?.z()?;
+        result.push(val);
     }
 
     Ok(result)

@@ -10,6 +10,7 @@ package com.parquet.parquetdataformat.bridge;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -25,13 +26,13 @@ public class NativeParquetWriter implements Closeable {
      * @param filePath path to the Parquet file
      * @param indexName name of the index (used for settings lookup)
      * @param schemaAddress Arrow C Data Interface schema pointer
-     * @param sortColumn column to sort by
-     * @param reverseSort whether to sort in reverse order
+     * @param sortColumns columns to sort by (tie-breaking in list order)
+     * @param reverseSorts whether to sort in reverse order for each sort column
      * @throws IOException if writer creation fails
      */
-    public NativeParquetWriter(String filePath, String indexName, long schemaAddress, String sortColumn, boolean reverseSort) throws IOException {
+    public NativeParquetWriter(String filePath, String indexName, long schemaAddress, List<String> sortColumns, List<Boolean> reverseSorts) throws IOException {
         this.filePath = filePath;
-        RustBridge.createWriter(filePath, indexName, schemaAddress, sortColumn, reverseSort);
+        RustBridge.createWriter(filePath, indexName, schemaAddress, sortColumns, reverseSorts);
     }
 
     /**

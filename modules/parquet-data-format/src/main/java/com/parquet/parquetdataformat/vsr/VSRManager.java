@@ -20,6 +20,7 @@ import org.opensearch.index.engine.exec.FlushIn;
 import org.opensearch.index.engine.exec.WriteResult;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -40,17 +41,17 @@ public class VSRManager implements AutoCloseable {
     private final AtomicReference<ManagedVSR> managedVSR = new AtomicReference<>();
     private final String fileName;
     private final VSRPool vsrPool;
-    private final String sortColumn;
-    private final boolean reverseSort;
+    private final List<String> sortColumns;
+    private final List<Boolean> reverseSorts;
     private final String indexName;
     private NativeParquetWriter writer;
 
 
-    public VSRManager(String fileName, String indexName, Schema schema, ArrowBufferPool arrowBufferPool, String sortColumn, boolean reverseSort) {
+    public VSRManager(String fileName, String indexName, Schema schema, ArrowBufferPool arrowBufferPool, List<String> sortColumns, List<Boolean> reverseSorts) {
         this.fileName = fileName;
         this.indexName = indexName;
-        this.sortColumn = sortColumn;
-        this.reverseSort = reverseSort;
+        this.sortColumns = sortColumns;
+        this.reverseSorts = reverseSorts;
 
         // Create VSR pool
         this.vsrPool = new VSRPool("pool-" + fileName, schema, arrowBufferPool);
@@ -65,7 +66,7 @@ public class VSRManager implements AutoCloseable {
     private void initializeWriter() {
         try {
             try (ArrowExport export = managedVSR.get().exportSchema()) {
-                writer = new NativeParquetWriter(fileName, indexName, export.getSchemaAddress(), sortColumn, reverseSort);
+                writer = new NativeParquetWriter(fileName, indexName, export.getSchemaAddress(), sortColumns, reverseSorts);
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize Parquet writer: " + e.getMessage(), e);
