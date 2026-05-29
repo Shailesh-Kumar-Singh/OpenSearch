@@ -108,6 +108,17 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
         Property.NodeScope
     );
 
+    /**
+     * Setting to disable specific plugins from loading at startup.
+     * Plugins listed here will be skipped during discovery even if present on disk.
+     */
+    public static final Setting<List<String>> DISABLED_SETTING = Setting.listSetting(
+        "plugin.disabled",
+        Collections.emptyList(),
+        Function.identity(),
+        Property.NodeScope
+    );
+
     public List<Setting<?>> getPluginSettings() {
         return plugins.stream().flatMap(p -> p.v2().getSettings().stream()).collect(Collectors.toList());
     }
@@ -213,6 +224,17 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
                 if (isAccessibleDirectory(pluginsDirectory, logger)) {
                     checkForFailedPluginRemovals(pluginsDirectory);
                     Set<Bundle> plugins = getPluginBundles(pluginsDirectory);
+                    // Filter out disabled plugins
+                    List<String> disabledPlugins = DISABLED_SETTING.get(settings);
+                    if (disabledPlugins.isEmpty() == false) {
+                        plugins.removeIf(bundle -> {
+                            if (disabledPlugins.contains(bundle.plugin.getName())) {
+                                logger.info("Plugin [{}] is disabled via [plugin.disabled] setting, skipping", bundle.plugin.getName());
+                                return true;
+                            }
+                            return false;
+                        });
+                    }
                     for (final Bundle bundle : plugins) {
                         pluginsList.add(bundle.plugin);
                         pluginsNames.add(bundle.plugin.getName());
